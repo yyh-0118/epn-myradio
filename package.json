@@ -1,0 +1,113 @@
+{
+  "name": "mineradio-afterglow",
+  "productName": "Mineradio Afterglow",
+  "version": "0.1.0",
+  "description": "基于 Mineradio 的本地音乐聆听、瞬间记录与创作工作台融合原型。",
+  "author": "Mineradio",
+  "license": "GPL-3.0-only",
+  "main": "desktop/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:workbench": "node scripts/build-workbench.js",
+    "build:sidecar": "node scripts/build-afterglow-sidecar.js",
+    "build:fusion": "npm run build:workbench && npm run build:sidecar",
+    "test:afterglow-store": "node --test tests/afterglow-note-store.test.js",
+    "test:afterglow-runtime": "node --test tests/afterglow-sidecar-proxy.test.js",
+    "test:electron-fusion": "node workbench/tests/electron/runtime-smoke.mjs",
+    "test:fusion": "npm run test:afterglow-store && npm run test:afterglow-runtime",
+    "check:fusion": "node --check public/js/modules/10-shell/06-afterglow-host.js && node --check desktop/afterglow-note-store.js && npm run build:fusion",
+    "build:win": "npm run build:fusion && electron-builder --win nsis",
+    "build:win:dir": "npm run build:fusion && electron-builder --win dir",
+    "build:win:internal-beta": "npm run build:fusion && electron-builder --config electron-builder.internal-beta.json --win nsis --publish never"
+  },
+  "build": {
+    "appId": "com.mineradio.afterglow.desktop",
+    "productName": "Mineradio Afterglow",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "afterPack": "build/after-pack.js",
+    "toolsets": {
+      "winCodeSign": "1.1.0"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/**/*",
+      "build/**/*",
+      "cuefield/**/*",
+      "server.js",
+      "*-api.js",
+      "qishui-auth-v6.js",
+      "qishui-qr-login.js",
+      "qishui-auth-v6/**/*",
+      "qishui-audio-decryptor/**/*",
+      "dj-analyzer.js",
+      "LICENSE",
+      "NOTICE.md",
+      "docs/THIRD_PARTY_PORTS.md",
+      "package.json",
+      "!desktop/wallpaper-preload.js",
+      "!public/wallpaper.html",
+      "!public/index.*.html",
+      "public/index.html"
+    ],
+    "asar": false,
+    "win": {
+      "executableName": "MineradioAfterglow",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mineradio Afterglow",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "include": "build/installer.nsh",
+      "artifactName": "Mineradio-Afterglow-${version}-Setup.${ext}"
+    }
+  },
+  "mineradio": {
+    "update": {
+      "provider": "none",
+      "disabled": true
+    }
+  },
+  "dependencies": {
+    "gsap": "^3.15.0",
+    "mpg123-decoder": "^1.0.3",
+    "music-metadata": "11.14.0",
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "qrcode": "^1.5.4"
+  },
+  "overrides": {
+    "axios": "1.18.1",
+    "body-parser": "1.20.6",
+    "music-metadata": "11.14.0"
+  },
+  "devDependencies": {
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.11",
+    "rcedit": "^5.0.2"
+  },
+  "allowScripts": {
+    "electron@42.4.1": true
+  }
+}

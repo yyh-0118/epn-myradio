@@ -1,0 +1,21 @@
+Bundled license information:
+
+toad-cache/dist/toad-cache.cjs:
+  /**
+   * toad-cache
+   *
+   * @copyright 2026 Igor Savin <kibertoad@gmail.com>
+   * @license MIT
+   * @version 3.7.3
+   */
+
+@fastify/proxy-addr/index.js:
+  /*!
+   * proxy-addr
+   * Copyright(c) 2021 Fastify collaborators
+   * Copyright(c) 2014-2016 Douglas Christopher Wilson
+   * MIT Licensed
+   */
+
+light-my-request/lib/form-data.js:
+  /*! formdata-polyfill. MIT License. Jimmy Wärting <https://jimmy.warting.se/opensource> */

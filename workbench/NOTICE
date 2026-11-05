@@ -1,0 +1,33 @@
+Afterglow / 余响 — local fusion demo
+
+1. Mineradio
+src/lib/lyrics.ts adapts the LRC and YRC parsing algorithms from:
+Mineradio-paused/public/js/modules/06-lyrics/00-lyrics-fetch-parse.js
+Original project license: GPL-3.0-only. Copyright remains with its authors.
+Changes in this demo: TypeScript types, stable line IDs, LRC offset support,
+explicit untimed text handling, independent exports.
+The full GPL v3 license is supplied in LICENSE.
+Mineradio visual direction is acknowledged; Afterglow's UI, canvas, record art,
+icons integration, audio generator and transition are newly implemented.
+No streaming adapters, account sessions, logos or music files were copied.
+
+2. EchoPulseNode
+vendor/epn contains the original local project's analysis service dependency
+subset and its required prompt asset, copied with the user's request to combine
+their two projects. Copyright remains with the original author(s).
+Changes: env.ts loads only Afterglow/.env; DeepSeekClient.ts adds a 45s timeout.
+The local wrapper disables remote metadata lookup and exposes a narrowed API.
+The source project has no explicit distribution license in its package manifest.
+This demo is private. Verify distribution rights before public release; this
+notice does not relicense third-party code or grant rights to their authorship.
+
+3. New demo content
+The sample words and synthesized instrumental audio are original demo material.
+They are not a recording of a real artist or a lyric-synchronized vocal track.
+All note records originate from user actions; no personal notes are prefilled.
+
+4. Dependencies
+React / React DOM: MIT.
+Lucide: ISC.
+Fastify / dotenv / Vite / TypeScript / tsx and other packages retain their own
+licenses supplied in their distributions. See package-lock.json for versions.
