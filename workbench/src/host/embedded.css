@@ -196,3 +196,44 @@ h1 { margin: 10px 0 0; font-weight: 300; font-size: clamp(25px, 3vw, 39px); lett
   .quick-capture { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; } }
+
+.review-panel { padding-top: 2vh; max-width: 860px; }
+.review-panel h1 { font-weight: 300; font-size: 30px; line-height: 1.5; margin: 14px 0 26px; color: #d3dfd8; }
+.review-controls { display: grid; gap: 12px; }
+.review-ranges { display: flex; gap: 8px; flex-wrap: wrap; }
+.review-ranges button { padding: 8px 14px; border-radius: 6px; background: transparent; border: 1px solid var(--line); color: #8aa095; font-size: 11px; }
+.review-ranges button.active { color: #dcebe2; border-color: rgba(169,211,189,.5); background: rgba(169,211,189,.08); }
+.review-controls input { padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line); background: rgba(16,25,27,.7); font-size: 12px; }
+.review-run { justify-self: start; display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 8px; background: rgba(169,211,189,.14); color: #dcebe2; border: 1px solid rgba(169,211,189,.35); font-size: 12px; }
+.review-run:hover:not(:disabled) { background: rgba(169,211,189,.22); }
+.review-privacy { display: flex; gap: 9px; align-items: flex-start; margin-top: 16px; color: #6f867b; }
+.review-privacy p { margin: 0; font-size: 10px; line-height: 1.8; }
+.review-setup { margin-top: 16px; padding: 16px 18px; border: 1px solid rgba(217,180,140,.35); border-radius: 8px; background: rgba(217,180,140,.06); color: #c9b08c; }
+.review-setup b { font-weight: 500; font-size: 12px; }
+.review-setup p { margin: 8px 0 0; font-size: 10px; line-height: 1.9; word-break: break-all; }
+.review-setup code { background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 3px; }
+.review-empty { margin-top: 20px; color: #768c80; font-size: 11px; }
+.review-error { margin-top: 18px; color: #dc9eaa; font-size: 11px; }
+.review-result { margin-top: 26px; padding: 26px 28px; border: 1px solid var(--line); border-radius: 12px; background: rgba(16,25,27,.7); display: grid; gap: 18px; }
+.review-result > header { display: flex; justify-content: space-between; font-size: 9px; letter-spacing: 1px; color: #6f867b; }
+.review-overview { margin: 0; font-size: 14px; line-height: 2; color: #cfdcd4; }
+.review-theme h3 { margin: 0 0 8px; font-size: 13px; font-weight: 500; color: #bbdfce; }
+.review-theme p { margin: 0 0 10px; font-size: 12px; line-height: 1.95; color: #aebdb5; }
+.review-theme div { display: flex; gap: 7px; flex-wrap: wrap; }
+.review-theme div button { padding: 5px 10px; border-radius: 999px; font-size: 9px; background: rgba(169,211,189,.08); color: #8fb09f; border: 1px solid var(--line); }
+.review-theme div button:hover { background: rgba(169,211,189,.16); }
+.review-question { padding: 16px 18px; border-left: 2px solid rgba(217,180,140,.6); background: rgba(217,180,140,.05); }
+.review-question b { font-size: 9px; letter-spacing: 1.5px; font-weight: 400; color: #c9b08c; }
+.review-question p { margin: 8px 0 0; font-size: 13px; line-height: 1.9; color: #dccdb4; }
+.review-result small { font-size: 9px; color: #627a6e; line-height: 1.7; }
+
+.ask-prompt { display: grid; gap: 6px; padding-top: 16px; }
+.ask-trigger { justify-self: start; display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px; background: transparent; border: 1px dashed rgba(169,211,189,.3); color: #8fb09f; font-size: 10px; }
+.ask-trigger:hover:not(:disabled) { background: rgba(169,211,189,.08); }
+.ask-card { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; align-items: start; padding: 13px 16px; border-left: 2px solid rgba(217,180,140,.6); background: rgba(217,180,140,.05); border-radius: 0 8px 8px 0; color: #c9b08c; }
+.ask-card svg { margin-top: 4px; }
+.ask-card p { margin: 0; font-size: 14px; line-height: 1.8; color: #e0d2b9; font-family: 'Songti SC', SimSun, Georgia, serif; }
+.ask-card > div { grid-column: 2; display: flex; gap: 12px; align-items: center; }
+.ask-card > div button { background: none; color: #a99572; font-size: 9px; display: inline-flex; align-items: center; gap: 5px; padding: 2px 0; }
+.ask-card > div button:hover:not(:disabled) { color: #dccdb4; }
+.ask-prompt small { color: #dc9eaa; font-size: 9px; }

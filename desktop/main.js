@@ -486,7 +486,7 @@ const CHROMIUM_SAFE_PERFORMANCE_SWITCHES = [
   ['enable-oop-rasterization'],
   ['enable-zero-copy'],
   ['enable-accelerated-2d-canvas'],
-  ['use-angle', 'd3d11'],
+  ...(process.platform === 'win32' ? [['use-angle', 'd3d11']] : []),
 ];
 const CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES = [
   ['ignore-gpu-blocklist', null, 'MINERADIO_IGNORE_GPU_BLOCKLIST'],
@@ -5343,8 +5343,36 @@ function afterglowSidecarEnvironment(token) {
     'RHYME_PROMPT_VERSION', 'ANALYSIS_CONTRACT_VERSION',
   ];
   const env = { NODE_ENV: app.isPackaged ? 'production' : 'development', AFTERGLOW_PORT: '0', AFTERGLOW_SIDECAR_TOKEN: token };
+  const fileConfig = readAfterglowLlmConfig();
+  if (fileConfig) {
+    env.USE_REAL_LLM = 'true';
+    env.LLM_API_URL = fileConfig.apiUrl;
+    env.LLM_API_KEY = fileConfig.apiKey;
+    env.LLM_MODEL = fileConfig.model;
+  }
   for (const key of keys) if (process.env[key] != null) env[key] = String(process.env[key]);
   return env;
+}
+
+function readAfterglowLlmConfig() {
+  const file = path.join(STABLE_USER_DATA_PATH, 'afterglow-llm.json');
+  try {
+    if (!fs.existsSync(file)) return null;
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const apiUrl = String(raw.apiUrl || '').trim();
+    const apiKey = String(raw.apiKey || '').trim();
+    const model = String(raw.model || '').trim();
+    const url = new URL(apiUrl);
+    const loopback = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname);
+    if (!model || (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))) {
+      console.warn('[Afterglow] afterglow-llm.json ignored: needs https apiUrl (or loopback http) and model.');
+      return null;
+    }
+    return { apiUrl, apiKey, model };
+  } catch (error) {
+    console.warn('[Afterglow] afterglow-llm.json unreadable:', error && error.message || error);
+    return null;
+  }
 }
 
 function verifyAfterglowSidecar(port, token) {

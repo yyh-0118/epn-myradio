@@ -1,8 +1,6 @@
 var homeDashboardReviewOffset = 0;
 var homeDashboardHeroFingerprint = '';
 var homeDashboardQuickFingerprint = '';
-var homeDashboardDiscoveryFingerprint = '';
-var homeDashboardDiscoveryCache = [];
 var homeDashboardRefreshTimer = null;
 var HOME_DASHBOARD_VIDEO_DB_NAME = 'mineradio-home-dashboard-video-v1';
 var HOME_DASHBOARD_VIDEO_STORE = 'media';
@@ -106,7 +104,23 @@ function homeDashboardDayNumber() {
   return Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 86400000);
 }
 
+var HOME_CUSTOM_QUOTE_KEY = 'mineradio-home-custom-quote-v1';
+var homeDashboardQuoteEditing = false;
+
+function homeDashboardReadCustomQuote() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(HOME_CUSTOM_QUOTE_KEY) || 'null');
+    var text = saved && typeof saved.text === 'string' ? saved.text.trim() : '';
+    if (!text) return null;
+    return { text: text.slice(0, 120), source: String(saved.source || '').trim().slice(0, 30), custom: true };
+  } catch (_error) {
+    return null;
+  }
+}
+
 function homeDashboardSelectedReview() {
+  var custom = homeDashboardReadCustomQuote();
+  if (custom) return custom;
   var reviews = homeDashboardReadReviews();
   if (!reviews.length) return { text: '让今天的声音，从你喜欢的地方开始。', source: 'Mineradio' };
   var index = ((homeDashboardDayNumber() + homeDashboardReviewOffset) % reviews.length + reviews.length) % reviews.length;
@@ -194,12 +208,30 @@ async function homeDashboardDeleteVideoBlob() {
 function homeDashboardReadVideoMeta() {
   try {
     var meta = JSON.parse(localStorage.getItem(HOME_DASHBOARD_VIDEO_META_KEY) || 'null');
-    if (!meta || meta.version !== 1 || !/\.mp4$/i.test(String(meta.name || ''))) return null;
-    if (meta.type && String(meta.type).toLowerCase() !== 'video/mp4') return null;
+    if (!meta) return null;
+    if (meta.version === 1) {
+      if (!/\.mp4$/i.test(String(meta.name || ''))) return null;
+      return { version: 2, kind: 'video', name: meta.name, type: 'video/mp4', size: meta.size, savedAt: meta.savedAt };
+    }
+    if (meta.version !== 2 || (meta.kind !== 'video' && meta.kind !== 'image')) return null;
     return meta;
   } catch (_error) {
     return null;
   }
+}
+
+var HOME_BG_VIDEO_EXT = { mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' };
+var HOME_BG_IMAGE_EXT = { gif: 'image/gif', webp: 'image/webp', apng: 'image/apng', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', avif: 'image/avif' };
+
+function homeDashboardClassifyBackground(file) {
+  if (!file) return null;
+  var ext = (String(file.name || '').match(/\.([a-z0-9]+)$/i) || [])[1];
+  ext = String(ext || '').toLowerCase();
+  if (ext === 'heic' || ext === 'heif') return { error: '暂不支持 HEIC。实况图请导出其中的 .mov 视频，或另存为 JPG/PNG' };
+  var type = String(file.type || '').toLowerCase();
+  if (HOME_BG_VIDEO_EXT[ext] || type.indexOf('video/') === 0) return { kind: 'video', type: type || HOME_BG_VIDEO_EXT[ext] };
+  if (HOME_BG_IMAGE_EXT[ext] || type.indexOf('image/') === 0) return { kind: 'image', type: type || HOME_BG_IMAGE_EXT[ext] };
+  return { error: '支持视频（MP4/MOV/WebM）、动图（GIF/WebP）和照片（JPG/PNG/AVIF）' };
 }
 
 function homeDashboardIsMp4File(file) {
@@ -220,10 +252,10 @@ function homeDashboardReleaseVideoSource(removeElement) {
   homeDashboardVideoLoadToken += 1;
   var video = document.querySelector('#empty-home .home-dashboard-video');
   if (video) {
-    try { video.pause(); } catch (_error) { }
+    try { if (typeof video.pause === 'function') video.pause(); } catch (_error) { }
     try {
       video.removeAttribute('src');
-      video.load();
+      if (typeof video.load === 'function') video.load();
     } catch (_error) { }
     if (removeElement !== false && video.parentNode) video.parentNode.removeChild(video);
   }
@@ -243,7 +275,7 @@ async function homeDashboardAttachVideo() {
   if (!card) return;
   var currentVideo = card.querySelector('.home-dashboard-video');
   if (currentVideo && homeDashboardVideoObjectUrl) {
-    currentVideo.play().catch(function () { });
+    if (typeof currentVideo.play === 'function') currentVideo.play().catch(function () { });
     return;
   }
   if (homeDashboardVideoAttachBusy) return;
@@ -270,29 +302,35 @@ async function homeDashboardAttachVideo() {
       shouldRetry = homeDashboardVideoShouldPlay();
       return;
     }
-    var video = document.createElement('video');
-    video.className = 'home-dashboard-video';
+    var isImage = meta.kind === 'image';
+    var video = document.createElement(isImage ? 'img' : 'video');
+    video.className = 'home-dashboard-video' + (isImage ? ' home-dashboard-image' : '');
     video.setAttribute('aria-hidden', 'true');
-    video.muted = true;
-    video.defaultMuted = true;
-    video.loop = true;
-    video.playsInline = true;
-    video.setAttribute('playsinline', '');
-    video.preload = 'metadata';
+    if (isImage) {
+      video.alt = '';
+      video.decoding = 'async';
+    } else {
+      video.muted = true;
+      video.defaultMuted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.preload = 'metadata';
+    }
     video.src = objectUrl;
     video.addEventListener('error', function () {
       if (token !== homeDashboardVideoLoadToken || !video.getAttribute('src')) return;
       homeDashboardVideoDecodeFailed = true;
       homeDashboardReleaseVideoSource(true);
-      homeDashboardNotify('这个 MP4 无法解码，请换成 H.264 编码的 MP4');
+      homeDashboardNotify(isImage ? '这张图片无法显示，请换一张' : '这个视频无法解码，请换成 H.264 编码的 MP4');
     }, { once: true });
     homeDashboardVideoObjectUrl = objectUrl;
     card.insertBefore(video, card.firstChild);
-    video.play().catch(function () { });
+    if (!isImage) video.play().catch(function () { });
   } catch (error) {
     console.warn('[HomeDashboardVideo]', error);
     homeDashboardReleaseVideoSource(true);
-    homeDashboardNotify('主页 MP4 读取失败，请重新选择');
+    homeDashboardNotify('首页背景读取失败，请重新选择');
   } finally {
     homeDashboardVideoAttachBusy = false;
     if (shouldRetry && !homeDashboardVideoDecodeFailed) {
@@ -305,7 +343,7 @@ function homeDashboardRenderVideoActions() {
   var hasVideo = !!homeDashboardReadVideoMeta();
   var choose = document.getElementById('home-dashboard-video-choose');
   var clear = document.getElementById('home-dashboard-video-clear');
-  if (choose) choose.textContent = hasVideo ? '更换 MP4' : '选择 MP4';
+  if (choose) choose.textContent = hasVideo ? '更换背景' : '选择背景';
   if (clear) clear.hidden = !hasVideo;
 }
 
@@ -315,8 +353,9 @@ function homeDashboardUpdateVideoPower() {
     return;
   }
   var video = document.querySelector('#empty-home .home-dashboard-video');
-  if (video && homeDashboardVideoObjectUrl) video.play().catch(function () { });
-  else homeDashboardAttachVideo();
+  if (video && homeDashboardVideoObjectUrl) {
+    if (typeof video.play === 'function') video.play().catch(function () { });
+  } else homeDashboardAttachVideo();
 }
 
 function openHomeDashboardVideoPicker() {
@@ -325,18 +364,21 @@ function openHomeDashboardVideoPicker() {
 }
 
 async function handleHomeDashboardVideoFile(file) {
-  if (!homeDashboardIsMp4File(file)) {
-    homeDashboardNotify('这里只能选择 .mp4 文件');
+  var info = homeDashboardClassifyBackground(file);
+  if (!info || info.error) {
+    homeDashboardNotify(info && info.error || '不支持这个文件');
     return;
   }
-  if (Number(file.size) > HOME_DASHBOARD_VIDEO_MAX_BYTES) {
-    homeDashboardNotify('MP4 不能超过 300 MB');
+  var limit = info.kind === 'video' ? HOME_DASHBOARD_VIDEO_MAX_BYTES : 40 * 1024 * 1024;
+  if (Number(file.size) > limit) {
+    homeDashboardNotify(info.kind === 'video' ? '视频不能超过 300 MB' : '图片不能超过 40 MB');
     return;
   }
   var meta = {
-    version: 1,
-    name: String(file.name || 'home.mp4'),
-    type: 'video/mp4',
+    version: 2,
+    kind: info.kind,
+    name: String(file.name || 'home'),
+    type: info.type,
     size: Number(file.size) || 0,
     savedAt: Date.now(),
   };
@@ -347,10 +389,10 @@ async function handleHomeDashboardVideoFile(file) {
     homeDashboardReleaseVideoSource(true);
     homeDashboardRenderVideoActions();
     homeDashboardUpdateVideoPower();
-    homeDashboardNotify('主页 MP4 已保存');
+    homeDashboardNotify('首页背景已保存');
   } catch (error) {
     console.warn('[HomeDashboardVideoSave]', error);
-    homeDashboardNotify('主页 MP4 保存失败');
+    homeDashboardNotify('首页背景保存失败');
   }
 }
 
@@ -364,7 +406,7 @@ async function clearHomeDashboardVideo() {
   } catch (error) {
     console.warn('[HomeDashboardVideoDelete]', error);
   }
-  homeDashboardNotify('已恢复主页默认动画');
+  homeDashboardNotify('已恢复默认背景');
 }
 
 function bindHomeDashboardVideoControls() {
@@ -399,30 +441,88 @@ function renderHomeDashboardHero() {
       '<div class="daily-review-quote"></div>' +
       '<div class="daily-review-source"></div>' +
       '<div class="daily-review-actions">' +
-      '<button type="button" onclick="homeDashboardNextReview()">换一条</button>' +
-      '<button id="home-dashboard-video-choose" type="button" onclick="openHomeDashboardVideoPicker()">选择 MP4</button>' +
-      '<button id="home-dashboard-video-clear" type="button" onclick="clearHomeDashboardVideo()" hidden>移除视频</button>' +
+      '<button id="home-quote-edit" type="button" onclick="homeDashboardEditQuote()">编辑引语</button>' +
+      '<button id="home-dashboard-video-choose" type="button" onclick="openHomeDashboardVideoPicker()">选择背景</button>' +
+      '<button id="home-dashboard-video-clear" class="home-bg-clear" type="button" onclick="clearHomeDashboardVideo()" title="恢复默认背景" aria-label="恢复默认背景" hidden>×</button>' +
       '<button type="button" onclick="openHomePlayerConsole()">展开播放器控制台</button>' +
       '</div></div>' +
-      '<input id="home-dashboard-video-input" type="file" accept=".mp4,video/mp4" hidden aria-hidden="true">';
+      '<input id="home-dashboard-video-input" type="file" accept=".mp4,.mov,.m4v,.webm,.gif,.webp,.apng,.png,.jpg,.jpeg,.avif,video/mp4,video/quicktime,video/webm,image/gif,image/webp,image/png,image/jpeg,image/avif" hidden aria-hidden="true">';
     homeDashboardVideoControlsBound = false;
     bindHomeDashboardVideoControls();
   }
-  if (fingerprint !== homeDashboardHeroFingerprint) {
+  if (fingerprint !== homeDashboardHeroFingerprint && !homeDashboardQuoteEditing) {
     homeDashboardHeroFingerprint = fingerprint;
     var quote = hero.querySelector('.daily-review-quote');
     var source = hero.querySelector('.daily-review-source');
     if (quote) quote.textContent = '“' + review.text + '”';
-    if (source) source.textContent = '— ' + (review.source || '每日热评');
+    if (source) {
+      var sourceText = review.custom ? review.source : (review.source || '每日热评');
+      source.textContent = sourceText ? '— ' + sourceText : '';
+      source.hidden = !sourceText;
+    }
   }
   homeDashboardRenderVideoActions();
   homeDashboardUpdateVideoPower();
   homeDashboardUpdateClock();
 }
 
-function homeDashboardNextReview() {
-  homeDashboardReviewOffset += 1;
-  renderHomeDashboardHero();
+function homeDashboardEditQuote() {
+  var hero = document.querySelector('#empty-home .home-hero');
+  if (!hero || homeDashboardQuoteEditing) return;
+  var quote = hero.querySelector('.daily-review-quote');
+  var source = hero.querySelector('.daily-review-source');
+  var actions = hero.querySelector('.daily-review-actions');
+  if (!quote || !actions) return;
+  var current = homeDashboardReadCustomQuote();
+  homeDashboardQuoteEditing = true;
+  var savedActions = Array.prototype.slice.call(actions.childNodes);
+  var form = document.createElement('div');
+  form.className = 'home-quote-editor';
+  form.innerHTML = '<textarea class="home-quote-input" maxlength="120" rows="2" placeholder="写一句想每天看到的话" aria-label="自定义引语"></textarea>' +
+    '<input class="home-quote-source-input" maxlength="30" placeholder="署名（可不填）" aria-label="引语署名">';
+  var textarea = form.querySelector('textarea');
+  var sourceInput = form.querySelector('input');
+  textarea.value = current ? current.text : '';
+  sourceInput.value = current ? current.source : '';
+  quote.hidden = true;
+  if (source) source.hidden = true;
+  quote.parentNode.insertBefore(form, quote);
+  while (actions.firstChild) actions.removeChild(actions.firstChild);
+  function finish() {
+    homeDashboardQuoteEditing = false;
+    if (form.parentNode) form.parentNode.removeChild(form);
+    quote.hidden = false;
+    while (actions.firstChild) actions.removeChild(actions.firstChild);
+    savedActions.forEach(function (node) { actions.appendChild(node); });
+    homeDashboardHeroFingerprint = '';
+    renderHomeDashboardHero();
+  }
+  function addButton(label, handler) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.addEventListener('click', handler);
+    actions.appendChild(button);
+    return button;
+  }
+  var saveButton = addButton('保存', function () {
+    var text = textarea.value.trim();
+    try {
+      if (text) localStorage.setItem(HOME_CUSTOM_QUOTE_KEY, JSON.stringify({ text: text.slice(0, 120), source: sourceInput.value.trim().slice(0, 30) }));
+      else localStorage.removeItem(HOME_CUSTOM_QUOTE_KEY);
+    } catch (_error) { homeDashboardNotify('保存失败'); }
+    finish();
+  });
+  addButton('取消', finish);
+  addButton('恢复默认', function () {
+    try { localStorage.removeItem(HOME_CUSTOM_QUOTE_KEY); } catch (_error) { }
+    finish();
+  });
+  textarea.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') { event.preventDefault(); finish(); }
+    else if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); saveButton.click(); }
+  });
+  textarea.focus();
 }
 
 function homeDashboardCurrentSong() {
@@ -571,11 +671,11 @@ function renderHomeDashboardQuickCards() {
       className: 'home-card-quick',
     },
     {
-      label: 'RECENT',
-      title: '最近播放',
-      sub: recent ? ((recent.name || '最近一首') + (recent.artist ? ' · ' + recent.artist : '')) : '播放过的歌曲会出现在这里',
-      cover: recent && recent.cover || '',
-      action: 'playHomeRecent()',
+      label: 'AFTERGLOW',
+      title: '余响',
+      sub: '笔记、回顾与歌词分析',
+      cover: '',
+      action: 'openAfterglowWorkbench()',
       tone: 'playlist',
       className: 'home-card-quick',
     },
@@ -701,88 +801,6 @@ function homeDashboardSongKey(song) {
   return provider + '|' + (song.name || song.title || '') + '|' + homeDashboardSubtitle(song);
 }
 
-function homeDashboardDiscoverySongs() {
-  var candidates = [];
-  var seen = Object.create(null);
-  function addSongs(songs) {
-    (Array.isArray(songs) ? songs : []).forEach(function (song) {
-      if (!song) return;
-      var key = homeDashboardSongKey(song);
-      if (!key || seen[key]) return;
-      seen[key] = true;
-      candidates.push(song);
-    });
-  }
-
-  addSongs(homeDiscoverState && homeDiscoverState.songs);
-  addSongs(playQueue);
-  if (Array.isArray(userPlaylists)) {
-    userPlaylists.forEach(function (item) { addSongs(item && item.songs); });
-  }
-  addSongs(playlist);
-  addSongs(homeDashboardLocalSongs());
-
-  if (candidates.length <= 3) return candidates.slice();
-  var day = homeDashboardDayNumber();
-  var step = Math.max(1, Math.floor(candidates.length / 3));
-  var picked = [];
-  var pickedKeys = Object.create(null);
-  for (var index = 0; index < candidates.length && picked.length < 3; index += 1) {
-    var candidate = candidates[(day * 17 + index * step + index * 7) % candidates.length];
-    var candidateKey = homeDashboardSongKey(candidate);
-    if (!candidateKey || pickedKeys[candidateKey]) continue;
-    pickedKeys[candidateKey] = true;
-    picked.push(candidate);
-  }
-  return picked;
-}
-
-function renderHomeDashboardDiscovery() {
-  var root = document.getElementById('home-discovery-list');
-  if (!root) return;
-  homeDashboardDiscoveryCache = homeDashboardDiscoverySongs();
-  var fingerprint = homeDashboardDiscoveryCache.map(function (song) {
-    return [homeDashboardSongKey(song), song.name || song.title || '', homeDashboardSubtitle(song), homeDashboardSongCover(song, 180)].join('|');
-  }).join('||');
-  if (!fingerprint) fingerprint = 'empty';
-  if (fingerprint === homeDashboardDiscoveryFingerprint) return;
-  homeDashboardDiscoveryFingerprint = fingerprint;
-  root.classList.toggle('is-empty', !homeDashboardDiscoveryCache.length);
-  if (!homeDashboardDiscoveryCache.length) {
-    root.innerHTML = '<button class="home-discovery-empty" type="button" onclick="openHomeDashboardLibrary()">' +
-      '<strong>等待你的音乐</strong><span>登录平台或导入本地音乐后生成推荐</span></button>';
-    return;
-  }
-  root.innerHTML = homeDashboardDiscoveryCache.map(function (song, index) {
-    var cover = homeDashboardSongCover(song, 180);
-    var coverStyle = cover ? ' style="background-image:url(&quot;' + escHtml(cssImageUrl(cover)) + '&quot;)"' : '';
-    return '<button class="home-discovery-song" type="button" onclick="playHomeDashboardDiscoverySong(' + index + ')">' +
-      '<span class="home-discovery-cover"' + coverStyle + '></span>' +
-      '<span class="home-discovery-song-copy"><span class="home-discovery-song-name">' + escHtml(song.name || song.title || '未知歌曲') + '</span>' +
-      '<span class="home-discovery-song-artist">' + escHtml(homeDashboardSubtitle(song) || 'Mineradio 推荐') + '</span></span></button>';
-  }).join('');
-}
-
-function playHomeDashboardDiscoverySong(index) {
-  if (!homeDashboardDiscoveryCache.length) homeDashboardDiscoveryCache = homeDashboardDiscoverySongs();
-  if (!homeDashboardDiscoveryCache.length) {
-    openHomeDashboardLibrary();
-    return;
-  }
-  playQueue = homeDashboardDiscoveryCache.map(function (song) { return cloneSong(song); });
-  currentIdx = Math.max(0, Math.min(playQueue.length - 1, Number(index) || 0));
-  homeForcedOpen = false;
-  homeSuppressed = false;
-  if (typeof setHomeControlsLocked === 'function') setHomeControlsLocked(false);
-  if (typeof safeRenderQueuePanel === 'function') safeRenderQueuePanel('home-dashboard-discovery', { scrollCurrent: true });
-  if (typeof safeShelfRebuild === 'function') safeShelfRebuild('home-dashboard-discovery', true);
-  if (typeof forcePlaybackControlsInteractive === 'function') forcePlaybackControlsInteractive();
-  Promise.resolve(playQueueAt(currentIdx, {
-    manual: true,
-    context: { type: 'home-discovery', playlistName: '为你挑选' },
-  })).catch(function (error) { console.warn('[HomeDashboardDiscovery]', error); });
-}
-
 function renderHomeInsightDock() {
   if (!document.getElementById('home-insight-dock')) return;
   var metrics = homeDashboardTodayListenMetrics();
@@ -801,12 +819,17 @@ function renderHomeInsightDock() {
   var sub = document.getElementById('home-next-sub');
   var cover = document.getElementById('home-next-cover');
   var card = document.getElementById('home-next-card');
-  if (title) title.textContent = song ? (song.name || song.title || '未知歌曲') : '队列里还没有歌曲';
-  if (sub) sub.textContent = song ? (homeDashboardSubtitle(song) || '点击播放') : '点击打开音乐库';
+  var queued = !!(song && next.queued);
+  var modeText = typeof playModeLabel === 'function' && typeof playMode !== 'undefined' ? playModeLabel(playMode) : '';
+  var reshuffle = document.getElementById('home-order-reshuffle');
+  var kicker = document.getElementById('home-order-kicker');
+  if (title) title.textContent = song ? ('下一首 · ' + (song.name || song.title || '未知歌曲')) : '队列里还没有歌曲';
+  if (sub) sub.textContent = queued ? ((homeDashboardSubtitle(song) || '') + (modeText ? (homeDashboardSubtitle(song) ? ' · ' : '') + modeText : '')) : (song ? '点击开始播放' : '点击打开音乐库');
+  if (kicker) kicker.textContent = 'PLAY ORDER · 播放顺序' + (queued && Array.isArray(playQueue) ? ' · ' + playQueue.length + ' 首' : '');
+  if (reshuffle) reshuffle.hidden = !(queued && playQueue.length > 1 && typeof playMode !== 'undefined' && playMode === 'shuffle');
   var coverUrl = homeDashboardSongCover(song, 220);
   if (cover) homeDashboardSetStableBackgroundImage(cover, coverUrl);
-  if (card) card.setAttribute('aria-label', song ? ('播放下一首：' + (song.name || song.title || '未知歌曲')) : '打开音乐库');
-  renderHomeDashboardDiscovery();
+  if (card) card.setAttribute('aria-label', queued ? '播放顺序，共 ' + playQueue.length + ' 首' : '打开音乐库');
 }
 
 function playHomeNextFromDock() {

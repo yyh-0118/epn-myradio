@@ -80,30 +80,14 @@ function namedFunctionSource(source, name) {
   return '';
 }
 
-test('new home discovery strip is present in the homepage DOM', () => {
-  assert.equal(
-    hasClassTag(indexHtml, 'section', 'home-discovery-strip'),
-    true,
-    'expected a section.home-discovery-strip on the Mineradio homepage',
-  );
-  assert.equal(
-    hasIdAndClassTag(indexHtml, 'div', 'home-discovery-list', 'home-discovery-list'),
-    true,
-    'expected #home-discovery-list.home-discovery-list as the discovery render target',
-  );
+test('the "for you" discovery strip has been removed from the homepage', () => {
+  assert.equal(hasClassTag(indexHtml, 'section', 'home-discovery-strip'), false);
+  assert.equal(indexHtml.includes('home-discovery-list'), false);
+  assert.equal(dashboardScript.includes('renderHomeDashboardDiscovery'), false);
+  assert.equal(dashboardScript.includes('playHomeDashboardDiscoverySong'), false);
 });
 
-test('dashboard selects local discovery candidates and keeps cover swaps stable', () => {
-  const candidateSelector = namedFunctionSource(dashboardScript, 'homeDashboardDiscoverySongs');
-  assert.ok(candidateSelector, 'expected homeDashboardDiscoverySongs()');
-  assert.match(candidateSelector, /homeDiscoverState\s*&&[\s\S]{0,180}?homeDiscoverState\.songs/);
-  assert.match(candidateSelector, /homeDashboardLocalSongs\s*\(\s*\)/);
-  assert.match(
-    candidateSelector,
-    /(?:Math\.min\s*\(\s*3\b|\.slice\s*\(\s*0\s*,\s*3\s*\)|picked\.length\s*<\s*3\b)/,
-    'candidate selection should stay bounded to three homepage songs',
-  );
-
+test('dashboard keeps cover swaps stable', () => {
   const stableCoverUpdate = namedFunctionSource(dashboardScript, 'homeDashboardSetStableBackgroundImage');
   assert.ok(stableCoverUpdate, 'expected homeDashboardSetStableBackgroundImage()');
   assert.match(stableCoverUpdate, /new\s+Image\s*\(\s*\)/, 'stable cover updates should preload an image');
@@ -116,22 +100,6 @@ test('dashboard selects local discovery candidates and keeps cover swaps stable'
   assert.ok(stableCoverCalls.length >= 3, 'stable cover helper should be used by more than one homepage surface');
 });
 
-test('discovery song playback uses the existing Mineradio queue path', () => {
-  assert.ok(
-    namedFunctionSource(dashboardScript, 'renderHomeDashboardDiscovery'),
-    'expected renderHomeDashboardDiscovery()',
-  );
-  const discoveryPlayback = namedFunctionSource(dashboardScript, 'playHomeDashboardDiscoverySong');
-  assert.ok(discoveryPlayback, 'expected playHomeDashboardDiscoverySong()');
-  assert.match(
-    discoveryPlayback,
-    /playQueue\s*=\s*[\w.]+\.map\s*\(\s*(?:cloneSong|function\s*\([^)]*\)\s*\{\s*return\s+cloneSong\s*\([^)]*\)\s*;?\s*\})\s*\)/,
-  );
-  assert.match(discoveryPlayback, /currentIdx\s*=/);
-  assert.match(discoveryPlayback, /playQueueAt\s*\(\s*currentIdx\b/);
-  assert.match(discoveryPlayback, /type\s*:\s*['"]home-discovery['"]/);
-});
-
 test('homepage update does not import LX-only data paths', () => {
   for (const forbidden of ['/api/daily-hot', '/api/lx-source/search', 'heartbeatPlaylist', 'lxMirror']) {
     assert.equal(
@@ -142,26 +110,6 @@ test('homepage update does not import LX-only data paths', () => {
   }
 });
 
-test('discovery CSS stays scoped to the homepage surface', () => {
-  const discoverySelectors = cssRuleSelectors(indexCss).filter((selector) => selector.includes('.home-discovery-'));
-  assert.ok(discoverySelectors.length > 0, 'expected CSS rules for the homepage discovery strip');
-
-  for (const requiredClass of [
-    '.home-discovery-strip',
-    '.home-discovery-list',
-    '.home-discovery-song',
-    '.home-discovery-cover',
-  ]) {
-    assert.ok(
-      discoverySelectors.some((selector) => selector.includes(requiredClass)),
-      `expected a scoped CSS rule for ${requiredClass}`,
-    );
-  }
-
-  const unscopedSelectors = discoverySelectors.filter((selector) => !isHomeScopedSelector(selector));
-  assert.deepEqual(
-    unscopedSelectors,
-    [],
-    `discovery rules leaked outside the homepage: ${unscopedSelectors.join(', ')}`,
-  );
+test('no discovery CSS is left behind', () => {
+  assert.equal(indexCss.includes('home-discovery'), false);
 });

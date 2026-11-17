@@ -494,38 +494,62 @@ function showToast(msg) {
 
 var visualGuideSteps = [
   {
-    target: 'stage',
-    kicker: '01 / Welcome',
-    title: 'Mineradio 是用来听歌的视觉播放器',
-    body: '它不是单纯歌单页：搜索或导入一首歌后，封面、歌词、粒子和镜头会跟着音乐一起动。'
+    home: true,
+    selector: '#empty-home .daily-review-card',
+    place: 'right',
+    kicker: 'Home',
+    title: '这是你的首页',
+    body: '引语可以改成你自己的话，背景支持视频、动图和照片。需要播放条时，点「展开播放器控制台」。'
+  },
+  {
+    home: true,
+    selectorAll: '#empty-home .home-quick-grid .home-card:nth-child(-n+3)',
+    kicker: 'Shortcuts',
+    title: '继续听、音乐库、每日推荐',
+    body: '「继续播放」接着上次的队列；「音乐库」进入歌单和本地音乐；「每日推荐」需要先登录平台。'
+  },
+  {
+    home: true,
+    selector: '#empty-home .home-quick-grid .home-card[onclick*="openAfterglowWorkbench"]',
+    kicker: 'Afterglow',
+    title: '余响：把听歌的瞬间记下来',
+    body: '播放时按 Alt+N，或点右下角「记录此刻」，把这一句歌词和你的想法存进笔记。在余响里还能让 AI 回顾你的笔记。'
+  },
+  {
+    home: true,
+    selector: '#empty-home .home-listen-card',
+    kicker: 'Listening',
+    title: '今日聆听',
+    body: '点击卡片查看聆听统计；「AI 偏好分析」会根据你的聆听记录，总结最近的喜好。'
+  },
+  {
+    home: true,
+    selector: '#home-next-card',
+    kicker: 'Order',
+    title: '播放顺序',
+    body: '这里显示下一首。随机播放时可以「重新随机」；「调整顺序」里能切换播放模式、上下移动歌曲或移出队列。'
   },
   {
     selector: '#search-box',
-    kicker: '02 / Play',
+    kicker: 'Play',
     title: '从搜索或导入开始',
     body: '输入歌名、歌手或关键词即可播放；如果有本地音乐，也可以用导入入口直接放进舞台。'
   },
   {
     selector: '#bottom-bar',
-    kicker: '03 / Control',
+    kicker: 'Control',
     title: '播放以后看底部控制台',
     body: '播放、切歌、进度、队列和歌词都集中在底部，先把它当作一个正常播放器使用就可以。'
   },
   {
     selector: '#user-btn',
-    kicker: '04 / Account',
+    kicker: 'Account',
     title: '登录只是为了同步你的音乐库',
     body: '登录后会同步歌单、红心和播客；不登录也可以搜索和播放，不会强制卡住你。'
   },
   {
-    target: 'shelf',
-    kicker: '05 / Visual',
-    title: '进阶视觉都放在舞台周围',
-    body: '右侧 3D 歌单架和 DIY 玩家模式是进阶入口；先播放一首歌，再慢慢调视觉效果。'
-  },
-  {
     selector: '#diy-mode-btn',
-    kicker: '06 / DIY',
+    kicker: 'DIY',
     title: '高级功能在 DIY 玩家模式',
     body: '视觉控制台、上传/封面、自定义歌词、音质和更多面板都会在这里展开。'
   }
@@ -568,8 +592,14 @@ var visualGuideStepsDiy = [
     body: '右侧的 3D 歌单架会在靠近时半透明浮现，点击卡片可打开歌单，点卡片里的播放按钮可直接播放整张歌单。'
   }
 ];
+function buildVisualGuideSteps() {
+  if (diyPlayerMode) return visualGuideStepsDiy;
+  var onHome = !!(document.body && document.body.classList.contains('empty-home-active'));
+  return visualGuideSteps.filter(function (step) { return !step.home || onHome; });
+}
 function activeVisualGuideSteps() {
-  return diyPlayerMode ? visualGuideStepsDiy : visualGuideSteps;
+  if (visualGuideActive && visualGuideState && visualGuideState.steps) return visualGuideState.steps;
+  return buildVisualGuideSteps();
 }
 function visualGuideWasSeen() {
   try { return localStorage.getItem(VISUAL_GUIDE_SEEN_STORE_KEY) === '1'; } catch (e) { return true; }
@@ -603,7 +633,8 @@ function startVisualGuide(opts) {
     fxWasPeek: !!(document.getElementById('fx-panel') && document.getElementById('fx-panel').classList.contains('peek')),
     plWasPeek: !!(document.getElementById('playlist-panel') && document.getElementById('playlist-panel').classList.contains('peek')),
     mode: diyPlayerMode ? 'diy' : 'simple',
-    manual: !!opts.manual
+    manual: !!opts.manual,
+    steps: buildVisualGuideSteps()
   };
   var guide = document.getElementById('visual-guide');
   if (guide) {
@@ -623,6 +654,13 @@ function prepareVisualGuideStep(step) {
   var fxPanel = document.getElementById('fx-panel');
   var playlistPanel = document.getElementById('playlist-panel');
   if (typeof setShelfGuideCueActive === 'function') setShelfGuideCueActive(step && step.target === 'shelf');
+  if (step && step.home) {
+    var homeTarget = guideStepElements(step)[0];
+    if (homeTarget && typeof homeTarget.scrollIntoView === 'function') {
+      var targetBox = homeTarget.getBoundingClientRect();
+      if (targetBox.top < 12 || targetBox.bottom > innerHeight - 12) homeTarget.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }
+  }
   if (step && step.selector === '#search-box') setPeek(search, true, 'search');
   if (step && step.selector === '#playlist-panel') setPeek(playlistPanel, true, 'pl');
   else if (playlistPanel && !visualGuideState.plWasPeek) setPeek(playlistPanel, false, 'pl');
@@ -651,13 +689,37 @@ function showVisualGuideStep(index) {
   var next = document.getElementById('visual-guide-next');
   if (title) title.textContent = step.title;
   if (body) body.textContent = step.body;
-  if (kicker) kicker.textContent = step.kicker;
+  if (kicker) kicker.textContent = String(visualGuideStep + 1).padStart(2, '0') + ' / ' + String(step.kicker || '').replace(/^\d+\s*\/\s*/, '');
   if (hint) hint.textContent = visualGuideStep === steps.length - 1 ? '点击空白处完成引导' : '点击空白处也可以继续';
   if (progress) progress.textContent = (visualGuideStep + 1) + ' / ' + steps.length;
   if (next) next.textContent = visualGuideStep === steps.length - 1 ? '完成' : '下一步';
   scheduleVisualGuidePositioning();
 }
+function guideStepElements(step) {
+  if (!step) return [];
+  var query = step.selectorAll || step.selector;
+  if (!query) return [];
+  var found = step.selectorAll ? Array.prototype.slice.call(document.querySelectorAll(query)) : [document.querySelector(query)];
+  return found.filter(function (el) {
+    if (!el) return false;
+    var r = el.getBoundingClientRect();
+    var st = window.getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && st.display !== 'none' && st.visibility !== 'hidden';
+  });
+}
 function guideTargetRect(step) {
+  if (step && step.selectorAll) {
+    var els = guideStepElements(step);
+    if (els.length) {
+      var left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+      els.forEach(function (el) {
+        var r = el.getBoundingClientRect();
+        left = Math.min(left, r.left); top = Math.min(top, r.top);
+        right = Math.max(right, r.right); bottom = Math.max(bottom, r.bottom);
+      });
+      return { left: left, top: top, width: right - left, height: bottom - top, right: right, bottom: bottom };
+    }
+  }
   if (step && step.target === 'stage') {
     var stageW = Math.min(620, Math.max(260, innerWidth - 72));
     var stageH = Math.min(310, Math.max(178, innerHeight * 0.34));
@@ -729,7 +791,13 @@ function positionVisualGuideStep() {
   ring.style.top = top + 'px';
   ring.style.width = Math.max(44, width) + 'px';
   ring.style.height = Math.max(38, height) + 'px';
-  ring.style.borderRadius = step && step.target === 'shelf' ? '28px' : ((step && step.selector === '#bottom-bar') ? '20px' : '16px');
+  var ringRadius = step && step.target === 'shelf' ? 28 : ((step && step.selector === '#bottom-bar') ? 20 : 16);
+  if (step && step.home) {
+    var homeEl = guideStepElements(step)[0];
+    var homeRadius = homeEl ? parseFloat(window.getComputedStyle(homeEl).borderTopLeftRadius) : NaN;
+    if (isFinite(homeRadius)) ringRadius = Math.round(homeRadius + pad);
+  }
+  ring.style.borderRadius = ringRadius + 'px';
   var scrim = guide.querySelector('.visual-guide-scrim');
   if (scrim) {
     scrim.style.setProperty('--gx', ((rect.left + rect.width / 2) / Math.max(1, innerWidth) * 100).toFixed(2) + '%');
@@ -742,6 +810,10 @@ function positionVisualGuideStep() {
   var below = rect.bottom + 18;
   var above = rect.top - cardH - 18;
   var cardTop = below + cardH < innerHeight - 16 ? below : Math.max(16, above);
+  if (step && step.place === 'right' && rect.right + pad + 18 + cardW + 16 <= innerWidth) {
+    cardLeft = rect.right + pad + 18;
+    cardTop = Math.max(16, Math.min(innerHeight - cardH - 16, rect.top));
+  }
   card.style.left = cardLeft + 'px';
   card.style.top = cardTop + 'px';
 }

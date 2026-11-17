@@ -42203,6 +42203,151 @@ function createId3(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// workbench/server/ask.ts
+var AskUnavailableError = class extends Error {
+};
+var SYSTEM_PROMPT = [
+  "\u4F60\u662F\u7528\u6237\u7684\u4E00\u4F4D\u8001\u670B\u53CB\u3002\u4ED6\u5728\u542C\u6B4C\u65F6\u88AB\u67D0\u4E00\u523B\u6253\u52A8\uFF0C\u6B63\u51C6\u5907\u5199\u51E0\u53E5\u968F\u7B14\uFF0C\u4F60\u8981\u95EE\u4ED6\u4E00\u4E2A\u95EE\u9898\uFF0C\u5E2E\u4ED6\u5F00\u53E3\u3002",
+  "\u8981\u6C42\uFF1A",
+  "1. \u53EA\u95EE\u4E00\u4E2A\u95EE\u9898\uFF0C\u4E00\u53E5\u8BDD\uFF0C\u4E0D\u8D85\u8FC7 40 \u4E2A\u5B57\uFF0C\u7528\u53E3\u8BED\u3002",
+  "2. \u95EE\u4ED6\u7684\u611F\u53D7\u3001\u60F3\u8D77\u7684\u4EBA\u6216\u4E8B\u3001\u6B64\u523B\u7684\u5904\u5883\uFF0C\u800C\u4E0D\u662F\u5206\u6790\u6B4C\u8BCD\u7684\u4FEE\u8F9E\u6216\u97F5\u811A\u3002",
+  "3. \u4E0D\u6697\u793A\u7B54\u6848\uFF0C\u4E0D\u66FF\u4ED6\u4E0B\u7ED3\u8BBA\uFF0C\u4E0D\u7ED9\u5EFA\u8BAE\uFF0C\u4E0D\u8BF4\u6559\uFF0C\u4E0D\u7528\u201C\u8BF7\u95EE\u201D\u201C\u60A8\u201D\u4E4B\u7C7B\u7684\u5BA2\u5957\u3002",
+  "4. \u5982\u679C\u4ED6\u5DF2\u7ECF\u5199\u4E86\u8349\u7A3F\uFF0C\u5C31\u987A\u7740\u8349\u7A3F\u91CC\u6700\u6709\u5206\u91CF\u7684\u4E00\u5904\u5F80\u4E0B\u95EE\uFF0C\u4E0D\u8981\u91CD\u590D\u4ED6\u5DF2\u7ECF\u5199\u51FA\u6765\u7684\u5185\u5BB9\u3002",
+  "5. \u5982\u679C\u4ED6\u4EE5\u524D\u5728\u8FD9\u9996\u6B4C\u4E0B\u5199\u8FC7\u7B14\u8BB0\uFF0C\u53EF\u4EE5\u81EA\u7136\u5730\u547C\u5E94\uFF0C\u4F46\u53EA\u80FD\u5F15\u7528\u7ED9\u51FA\u7684\u5185\u5BB9\uFF0C\u4E0D\u7F16\u9020\u7ECF\u5386\u3002",
+  "6. \u6CA1\u6709\u6B4C\u8BCD\u65F6\uFF0C\u5C31\u95EE\u8FD9\u6BB5\u58F0\u97F3\u5E26\u7ED9\u4ED6\u4EC0\u4E48\u3002",
+  '\u53EA\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF1A{"question":"\u4F60\u7684\u95EE\u9898"}'
+].join("\n");
+async function runAsk(input, client = new DeepSeekClient()) {
+  if (!client.isConfigured) throw new AskUnavailableError("LLM_NOT_CONFIGURED");
+  const parts = [`\u6B4C\u66F2\uFF1A\u300A${input.track.title || "\u672A\u77E5\u66F2\u76EE"}\u300B${input.track.artist ? ` - ${input.track.artist}` : ""}`];
+  if (input.quote) parts.push(`\u4ED6\u88AB\u6253\u52A8\u7684\u8FD9\u4E00\u53E5\uFF1A${input.quote}`);
+  if (input.context?.length) parts.push(`\u524D\u540E\u7684\u6B4C\u8BCD\uFF1A
+${input.context.join("\n")}`);
+  if (input.earlier?.length) parts.push(`\u4ED6\u4EE5\u524D\u5728\u8FD9\u9996\u6B4C\u4E0B\u5199\u8FC7\uFF1A
+${input.earlier.map((note, index) => `${index + 1}. [${note.createdAt.slice(0, 10)}] ${note.body}`).join("\n")}`);
+  parts.push(input.draft?.trim() ? `\u4ED6\u73B0\u5728\u5199\u7684\u8349\u7A3F\uFF1A
+${input.draft.trim()}` : "\u4ED6\u8FD8\u6CA1\u6709\u5F00\u59CB\u5199\u3002");
+  const raw = await client.completeJson({
+    messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: parts.join("\n\n") }],
+    temperature: 0.8,
+    maxTokens: 4e3
+  });
+  const question = typeof raw.question === "string" ? raw.question.trim().replace(/^["“「]+|["”」]+$/g, "").slice(0, 120) : "";
+  if (!question) throw new Error("ASK_EMPTY");
+  return { question };
+}
+
+// workbench/server/taste.ts
+var TasteUnavailableError = class extends Error {
+};
+var SYSTEM_PROMPT2 = [
+  "\u4F60\u662F\u7528\u6237\u7684\u4E00\u4F4D\u8001\u670B\u53CB\uFF0C\u719F\u6089\u97F3\u4E50\u3002\u4E0B\u9762\u662F\u4ED6\u6700\u8FD1\u7684\u8046\u542C\u8BB0\u5F55\u7EDF\u8BA1\uFF0C\u8BF7\u5E2E\u4ED6\u770B\u770B\u4ED6\u6700\u8FD1\u7684\u559C\u597D\u3002",
+  "\u8981\u6C42\uFF1A",
+  "1. \u53EA\u4F9D\u636E\u7ED9\u51FA\u7684\u6570\u636E\uFF0C\u4E0D\u7F16\u9020\u4ED6\u6CA1\u542C\u8FC7\u7684\u6B4C\u3001\u6CA1\u6709\u7684\u7ECF\u5386\uFF0C\u4E0D\u51ED\u7A7A\u63A8\u65AD\u5E74\u9F84\u3001\u804C\u4E1A\u3001\u611F\u60C5\u72B6\u6001\u3002",
+  "2. \u6307\u51FA\u771F\u5B9E\u53EF\u89C1\u7684\u89C4\u5F8B\uFF1A\u53CD\u590D\u542C\u7684\u6B4C\u6216\u6B4C\u624B\u3001\u96C6\u4E2D\u542C\u6B4C\u7684\u65F6\u6BB5\u3001\u6700\u8FD1\u4E0E\u4E4B\u524D\u7684\u53D8\u5316\u3001\u542C\u6B4C\u91CF\u7684\u8D77\u4F0F\u3002",
+  "3. \u6570\u636E\u5F88\u5C11\u65F6\uFF0C\u5982\u5B9E\u8BF4\u201C\u76EE\u524D\u80FD\u770B\u51FA\u7684\u6709\u9650\u201D\uFF0C\u4E0D\u8981\u786C\u51D1\u3002",
+  "4. \u8BED\u6C14\u6E29\u548C\u3001\u53E3\u8BED\u5316\uFF0C\u4E0D\u8BF4\u6559\uFF0C\u4E0D\u4E0B\u8BCA\u65AD\uFF1B\u4F7F\u7528\u201C\u770B\u8D77\u6765\u201D\u201C\u4F3C\u4E4E\u201D\u8FD9\u7C7B\u63AA\u8F9E\u3002",
+  "5. \u53EF\u4EE5\u5728\u6700\u540E\u7ED9\u4E00\u53E5\u201C\u53EF\u4EE5\u8BD5\u8BD5\u201D\u7684\u5EFA\u8BAE\uFF08\u6BD4\u5982\u67D0\u7C7B\u98CE\u683C\u6216\u4E00\u4E2A\u6B4C\u624B\u65B9\u5411\uFF09\uFF0C\u5FC5\u987B\u662F\u5EFA\u8BAE\u800C\u4E0D\u662F\u7ED3\u8BBA\u3002",
+  "\u53EA\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF1A",
+  '{"summary":"2-3 \u53E5\u603B\u4F53\u5370\u8C61","points":[{"title":"8\u5B57\u4EE5\u5185","body":"1-2 \u53E5\uFF0C\u5199\u660E\u4F9D\u636E\u7684\u6570\u636E"}],"hint":"\u4E00\u53E5\u5EFA\u8BAE\uFF0C\u53EF\u4E3A\u7A7A\u5B57\u7B26\u4E32"}',
+  "points \u7ED9 2 \u5230 4 \u6761\u3002"
+].join("\n");
+async function runTaste(input, client = new DeepSeekClient()) {
+  if (!client.isConfigured) throw new TasteUnavailableError("LLM_NOT_CONFIGURED");
+  const lines = [
+    `\u7D2F\u8BA1\u8046\u542C ${input.totalMinutes} \u5206\u949F\uFF0C\u5171 ${input.sessions} \u6B21\u3002`,
+    `\u5E38\u542C\u6B4C\u66F2\uFF1A${input.topSongs.map((s) => `${s.name}${s.artist ? ` - ${s.artist}` : ""}\uFF08${s.plays} \u6B21/${s.minutes} \u5206\uFF09`).join("\uFF1B") || "\u65E0"}`,
+    `\u5E38\u542C\u6B4C\u624B\uFF1A${input.topArtists.map((a) => `${a.name}\uFF08${a.plays} \u6B21/${a.minutes} \u5206\uFF09`).join("\uFF1B") || "\u65E0"}`,
+    `0-23 \u70B9\u5404\u65F6\u6BB5\u5206\u949F\u6570\uFF1A${input.byHour.join(",")}`,
+    `\u6700\u8FD1 14 \u5929\u6BCF\u65E5\u5206\u949F\u6570\uFF1A${input.last14Days.map((d) => `${d.date.slice(5)}:${d.minutes}`).join(" ")}`,
+    `\u6700\u8FD1\u542C\u8FC7\uFF08\u65B0\u5230\u65E7\uFF09\uFF1A${input.recent.map((r) => `${r.at} ${r.name}${r.artist ? ` - ${r.artist}` : ""}${r.completed ? "" : "\uFF08\u672A\u542C\u5B8C\uFF09"}`).join("\uFF1B") || "\u65E0"}`
+  ];
+  const raw = await client.completeJson({
+    messages: [{ role: "system", content: SYSTEM_PROMPT2 }, { role: "user", content: lines.join("\n") }],
+    temperature: 0.6,
+    maxTokens: 6e3
+  });
+  const summary = typeof raw.summary === "string" ? raw.summary.trim().slice(0, 600) : "";
+  const points = [];
+  for (const item of Array.isArray(raw.points) ? raw.points : []) {
+    if (!item || typeof item !== "object") continue;
+    const point = item;
+    const title = typeof point.title === "string" ? point.title.trim().slice(0, 30) : "";
+    const body = typeof point.body === "string" ? point.body.trim().slice(0, 400) : "";
+    if (title && body) points.push({ title, body });
+  }
+  if (!summary && !points.length) throw new Error("TASTE_EMPTY");
+  return { summary, points: points.slice(0, 4), hint: typeof raw.hint === "string" ? raw.hint.trim().slice(0, 300) : "" };
+}
+
+// workbench/server/review.ts
+var REVIEW_MAX_NOTES = 60;
+var REVIEW_MAX_TOTAL_CHARS = 3e4;
+var SYSTEM_PROMPT3 = [
+  "\u4F60\u662F\u7528\u6237\u957F\u671F\u966A\u4F34\u7684\u4E00\u4F4D\u670B\u53CB\uFF0C\u6B63\u5728\u8BFB\u4ED6\u5728\u542C\u6B4C\u65F6\u968F\u624B\u5199\u4E0B\u7684\u7B14\u8BB0\uFF0C\u5E2E\u4ED6\u56DE\u987E\u548C\u6574\u7406\u3002",
+  "\u8BED\u6C14\uFF1A\u6E29\u548C\u3001\u76F4\u63A5\u3001\u50CF\u8BA4\u771F\u8BFB\u8FC7\u4ED6\u7B14\u8BB0\u7684\u670B\u53CB\uFF1B\u4E0D\u8BF4\u6559\uFF0C\u4E0D\u5806\u780C\u5957\u8BDD\uFF0C\u4E0D\u4F7F\u7528\u5FC3\u7406\u8BCA\u65AD\u5F0F\u63AA\u8F9E\u3002",
+  "\u4E25\u683C\u89C4\u5219\uFF1A",
+  "1. \u53EA\u4F9D\u636E\u4E0B\u65B9\u63D0\u4F9B\u7684\u7B14\u8BB0\u4F5C\u7B54\uFF0C\u4E0D\u7F16\u9020\u6CA1\u6709\u5199\u8FC7\u7684\u7ECF\u5386\u3001\u4EBA\u7269\u6216\u4E8B\u4EF6\u3002",
+  "2. \u6BCF\u6761\u4E3B\u9898\u5FC5\u987B\u901A\u8FC7 noteIds \u5F15\u7528\u5BF9\u5E94\u7B14\u8BB0\u7F16\u53F7\uFF08\u5982 N1\u3001N3\uFF09\uFF0C\u7F16\u53F7\u53EA\u80FD\u6765\u81EA\u8F93\u5165\u3002",
+  "3. \u5982\u679C\u7B14\u8BB0\u592A\u5C11\u6216\u592A\u96F6\u6563\uFF0C\u5982\u5B9E\u8BF4\u660E\u201C\u76EE\u524D\u80FD\u770B\u51FA\u7684\u6709\u9650\u201D\uFF0C\u4E0D\u8981\u786C\u51D1\u4E3B\u9898\u3002",
+  "4. \u53EF\u4EE5\u6307\u51FA\u53CD\u590D\u51FA\u73B0\u7684\u60C5\u7EEA\u3001\u6B4C\u66F2\u3001\u6B4C\u8BCD\u53E5\u5B50\u3001\u65F6\u95F4\u89C4\u5F8B\uFF0C\u4F46\u8981\u8868\u8FF0\u4E3A\u201C\u770B\u8D77\u6765\u201D\u201C\u4F3C\u4E4E\u201D\uFF0C\u4E0D\u4E0B\u5B9A\u8BBA\u3002",
+  "5. \u5982\u679C\u7B14\u8BB0\u4E2D\u51FA\u73B0\u660E\u663E\u7684\u81EA\u4F24\u6216\u7EDD\u671B\u8FF9\u8C61\uFF0C\u7528\u5173\u5FC3\u7684\u53E3\u543B\u5EFA\u8BAE\u4ED6\u8054\u7CFB\u8EAB\u8FB9\u53EF\u4FE1\u4EFB\u7684\u4EBA\u6216\u5F53\u5730\u7684\u5371\u673A\u63F4\u52A9\u6E20\u9053\uFF0C\u4E0D\u8981\u56DE\u907F\u3002",
+  "\u53EA\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF0C\u7ED3\u6784\u5982\u4E0B\uFF1A",
+  '{"overview":"2-4 \u53E5\u6574\u4F53\u56DE\u987E","themes":[{"title":"\u4E3B\u9898\u540D\uFF0C12 \u5B57\u4EE5\u5185","body":"2-3 \u53E5\uFF0C\u8BF4\u660E\u4F60\u770B\u5230\u4E86\u4EC0\u4E48","noteIds":["N1"]}],"question":"\u4E00\u4E2A\u503C\u5F97\u4ED6\u63A5\u7740\u60F3\u7684\u95EE\u9898\uFF0C1 \u53E5"}',
+  "themes \u7ED9 2 \u5230 4 \u4E2A\u3002"
+].join("\n");
+var ReviewUnavailableError = class extends Error {
+};
+async function runReview(input, client = new DeepSeekClient()) {
+  if (!client.isConfigured) throw new ReviewUnavailableError("LLM_NOT_CONFIGURED");
+  const notes = input.notes.slice(0, REVIEW_MAX_NOTES);
+  const labelToId = /* @__PURE__ */ new Map();
+  const lines = [];
+  notes.forEach((note, index) => {
+    const label = `N${index + 1}`;
+    labelToId.set(label, note.id);
+    const head = [label, note.createdAt.slice(0, 16).replace("T", " "), `\u300A${note.trackTitle || "\u672A\u77E5\u66F2\u76EE"}\u300B${note.artist ? ` - ${note.artist}` : ""}`].join(" | ");
+    lines.push(`${head}${note.quote ? `
+\u6B4C\u8BCD\uFF1A${note.quote}` : ""}${note.title ? `
+\u6807\u9898\uFF1A${note.title}` : ""}
+\u7B14\u8BB0\uFF1A${note.body}`);
+  });
+  const userContent = `${input.focus ? `\u4ED6\u8FD9\u6B21\u60F3\u5173\u6CE8\u7684\u662F\uFF1A${input.focus}
+
+` : ""}\u4EE5\u4E0B\u662F ${notes.length} \u6761\u7B14\u8BB0\uFF08\u7531\u65B0\u5230\u65E7\uFF09\uFF1A
+
+${lines.join("\n\n---\n\n")}`;
+  const raw = await client.completeJson({
+    messages: [{ role: "system", content: SYSTEM_PROMPT3 }, { role: "user", content: userContent }],
+    temperature: 0.5,
+    maxTokens: 8e3
+  });
+  const themes = [];
+  const dropped = [];
+  for (const item of Array.isArray(raw.themes) ? raw.themes : []) {
+    if (!item || typeof item !== "object") continue;
+    const theme = item;
+    const title = typeof theme.title === "string" ? theme.title.trim().slice(0, 60) : "";
+    const body = typeof theme.body === "string" ? theme.body.trim().slice(0, 800) : "";
+    const refs = [...new Set((Array.isArray(theme.noteIds) ? theme.noteIds : []).map((value) => labelToId.get(String(value).trim().toUpperCase())).filter((value) => Boolean(value)))];
+    if (!title || !body) continue;
+    if (!refs.length) {
+      dropped.push(title);
+      continue;
+    }
+    themes.push({ title, body, noteIds: refs.slice(0, 12) });
+  }
+  const overview = typeof raw.overview === "string" ? raw.overview.trim().slice(0, 1200) : "";
+  if (!overview && !themes.length) throw new Error("REVIEW_EMPTY");
+  return {
+    overview,
+    themes: themes.slice(0, 4),
+    question: typeof raw.question === "string" ? raw.question.trim().slice(0, 300) : "",
+    noteCount: notes.length,
+    warnings: dropped.length ? [`\u5DF2\u4E22\u5F03 ${dropped.length} \u4E2A\u65E0\u6CD5\u5BF9\u5E94\u5230\u4F60\u7B14\u8BB0\u7684\u4E3B\u9898\u3002`] : []
+  };
+}
+
 // workbench/server/app.ts
 var LocalMetadataService = class extends MusicMetadataService {
   resolveTrackMetadata(input) {
@@ -42288,6 +42433,127 @@ function buildApp() {
         steps: contract.pipeline.executions.map((step) => ({ kind: step.kind, status: step.status }))
       };
       return response;
+    } finally {
+      active--;
+    }
+  });
+  app2.post("/api/review/run", {
+    bodyLimit: 256 * 1024,
+    schema: {
+      body: {
+        type: "object",
+        additionalProperties: false,
+        required: ["notes"],
+        properties: {
+          focus: { type: "string", maxLength: 200 },
+          notes: {
+            type: "array",
+            minItems: 1,
+            maxItems: REVIEW_MAX_NOTES,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["id", "body", "createdAt"],
+              properties: {
+                id: { type: "string", minLength: 1, maxLength: 80 },
+                title: { type: "string", maxLength: 200, default: "" },
+                body: { type: "string", minLength: 1, maxLength: 4e3 },
+                quote: { type: "string", maxLength: 400, default: "" },
+                trackTitle: { type: "string", maxLength: 160, default: "" },
+                artist: { type: "string", maxLength: 160, default: "" },
+                createdAt: { type: "string", minLength: 1, maxLength: 40 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const total = request.body.notes.reduce((sum, note) => sum + note.body.length + (note.title?.length || 0) + (note.quote?.length || 0), 0);
+    if (total > REVIEW_MAX_TOTAL_CHARS) return reply.code(413).send({ message: "\u9009\u4E2D\u7684\u7B14\u8BB0\u592A\u957F\uFF0C\u8BF7\u7F29\u5C0F\u65F6\u95F4\u8303\u56F4\u3002" });
+    if (Date.now() - windowStart > 6e4) {
+      windowStart = Date.now();
+      requests = 0;
+    }
+    if (requests >= 20 || active >= 2) return reply.code(429).send({ message: "\u8BF7\u6C42\u8F83\u591A\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002" });
+    requests++;
+    active++;
+    try {
+      return await runReview({ notes: request.body.notes, focus: request.body.focus?.trim() || void 0 });
+    } catch (error) {
+      if (error instanceof ReviewUnavailableError) return reply.code(503).send({ code: "LLM_NOT_CONFIGURED", message: "\u8FD8\u6CA1\u6709\u914D\u7F6E\u6A21\u578B\u3002\u8BF7\u5148\u914D\u7F6E LLM\uFF0C\u8BE6\u89C1\u56DE\u987E\u9875\u7684\u63D0\u793A\u3002" });
+      const text = error instanceof Error ? error.message : "";
+      return reply.code(502).send({ code: "LLM_FAILED", message: /^LLM |API Key|余额|模型|请求过于频繁|上游服务/.test(text) ? text : "\u56DE\u987E\u751F\u6210\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002\u4F60\u7684\u7B14\u8BB0\u6CA1\u6709\u53D7\u5230\u5F71\u54CD\u3002" });
+    } finally {
+      active--;
+    }
+  });
+  app2.post("/api/ask/run", {
+    bodyLimit: 64 * 1024,
+    schema: {
+      body: {
+        type: "object",
+        additionalProperties: false,
+        required: ["track"],
+        properties: {
+          track: { type: "object", additionalProperties: false, required: ["title"], properties: { title: { type: "string", maxLength: 160 }, artist: { type: "string", maxLength: 160, default: "" } } },
+          quote: { type: "string", maxLength: 400, default: "" },
+          context: { type: "array", maxItems: 6, default: [], items: { type: "string", maxLength: 200 } },
+          draft: { type: "string", maxLength: 3e3, default: "" },
+          earlier: { type: "array", maxItems: 3, default: [], items: { type: "object", additionalProperties: false, required: ["body", "createdAt"], properties: { body: { type: "string", maxLength: 400 }, createdAt: { type: "string", maxLength: 40 } } } }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    if (Date.now() - windowStart > 6e4) {
+      windowStart = Date.now();
+      requests = 0;
+    }
+    if (requests >= 20 || active >= 2) return reply.code(429).send({ message: "\u8BF7\u6C42\u8F83\u591A\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002" });
+    requests++;
+    active++;
+    try {
+      return await runAsk(request.body);
+    } catch (error) {
+      if (error instanceof AskUnavailableError) return reply.code(503).send({ code: "LLM_NOT_CONFIGURED", message: "\u8FD8\u6CA1\u6709\u914D\u7F6E\u6A21\u578B\uFF0C\u6682\u65F6\u4E0D\u80FD\u63D0\u95EE\u3002" });
+      const text = error instanceof Error ? error.message : "";
+      return reply.code(502).send({ code: "LLM_FAILED", message: /^LLM |API Key|余额|模型|请求过于频繁|上游服务/.test(text) ? text : "\u8FD9\u6B21\u6CA1\u95EE\u51FA\u6765\uFF0C\u7A0D\u540E\u518D\u8BD5\u3002\u4F60\u7684\u7B14\u8BB0\u6CA1\u6709\u53D7\u5230\u5F71\u54CD\u3002" });
+    } finally {
+      active--;
+    }
+  });
+  app2.post("/api/taste/run", {
+    bodyLimit: 64 * 1024,
+    schema: {
+      body: {
+        type: "object",
+        additionalProperties: false,
+        required: ["totalMinutes", "sessions", "topSongs", "topArtists", "byHour", "last14Days", "recent"],
+        properties: {
+          totalMinutes: { type: "number", minimum: 0 },
+          sessions: { type: "number", minimum: 0 },
+          topSongs: { type: "array", maxItems: 15, items: { type: "object", required: ["name"], properties: { name: { type: "string", maxLength: 100 }, artist: { type: "string", maxLength: 100, default: "" }, plays: { type: "number", default: 0 }, minutes: { type: "number", default: 0 } } } },
+          topArtists: { type: "array", maxItems: 12, items: { type: "object", required: ["name"], properties: { name: { type: "string", maxLength: 100 }, plays: { type: "number", default: 0 }, minutes: { type: "number", default: 0 } } } },
+          byHour: { type: "array", minItems: 24, maxItems: 24, items: { type: "number", minimum: 0 } },
+          last14Days: { type: "array", maxItems: 14, items: { type: "object", required: ["date"], properties: { date: { type: "string", maxLength: 12 }, minutes: { type: "number", default: 0 } } } },
+          recent: { type: "array", maxItems: 40, items: { type: "object", required: ["name", "at"], properties: { name: { type: "string", maxLength: 100 }, artist: { type: "string", maxLength: 100, default: "" }, at: { type: "string", maxLength: 20 }, listenMin: { type: "number", default: 0 }, completed: { type: "boolean", default: false } } } }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    if (Date.now() - windowStart > 6e4) {
+      windowStart = Date.now();
+      requests = 0;
+    }
+    if (requests >= 20 || active >= 2) return reply.code(429).send({ message: "\u8BF7\u6C42\u8F83\u591A\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002" });
+    requests++;
+    active++;
+    try {
+      return await runTaste(request.body);
+    } catch (error) {
+      if (error instanceof TasteUnavailableError) return reply.code(503).send({ code: "LLM_NOT_CONFIGURED", message: "\u8FD8\u6CA1\u6709\u914D\u7F6E\u6A21\u578B\uFF0C\u6682\u65F6\u4E0D\u80FD\u5206\u6790\u3002" });
+      const text = error instanceof Error ? error.message : "";
+      return reply.code(502).send({ code: "LLM_FAILED", message: /^LLM |API Key|余额|模型|请求过于频繁|上游服务/.test(text) ? text : "\u8FD9\u6B21\u6CA1\u5206\u6790\u51FA\u6765\uFF0C\u7A0D\u540E\u518D\u8BD5\u3002" });
     } finally {
       active--;
     }

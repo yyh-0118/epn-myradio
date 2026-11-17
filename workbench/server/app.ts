@@ -2,7 +2,10 @@ import Fastify from 'fastify';
 import { AnalysisService } from '../vendor/epn/server/services/AnalysisService';
 import { MusicMetadataService, type ResolveTrackMetadataInput } from '../vendor/epn/server/services/MusicMetadataService';
 import { serverEnv } from '../vendor/epn/server/config/env';
-import type { AnalysisResult } from '../src/types';
+import type { AnalysisResult, AskInput, TasteInput } from '../src/types';
+import { AskUnavailableError, runAsk } from './ask';
+import { TasteUnavailableError, runTaste } from './taste';
+import { REVIEW_MAX_NOTES, REVIEW_MAX_TOTAL_CHARS, ReviewUnavailableError, runReview } from './review';
 
 class LocalMetadataService extends MusicMetadataService {
   override resolveTrackMetadata(input: ResolveTrackMetadataInput) {
@@ -78,6 +81,95 @@ export function buildApp() {
         steps: contract.pipeline.executions.map((step) => ({ kind: step.kind, status: step.status })),
       };
       return response;
+    } finally { active--; }
+  });
+  app.post<{ Body: { notes: { id: string; title: string; body: string; quote: string; trackTitle: string; artist: string; createdAt: string }[]; focus?: string } }>('/api/review/run', {
+    bodyLimit: 256 * 1024,
+    schema: {
+      body: {
+        type: 'object', additionalProperties: false, required: ['notes'],
+        properties: {
+          focus: { type: 'string', maxLength: 200 },
+          notes: {
+            type: 'array', minItems: 1, maxItems: REVIEW_MAX_NOTES,
+            items: {
+              type: 'object', additionalProperties: false, required: ['id', 'body', 'createdAt'],
+              properties: {
+                id: { type: 'string', minLength: 1, maxLength: 80 }, title: { type: 'string', maxLength: 200, default: '' },
+                body: { type: 'string', minLength: 1, maxLength: 4000 }, quote: { type: 'string', maxLength: 400, default: '' },
+                trackTitle: { type: 'string', maxLength: 160, default: '' }, artist: { type: 'string', maxLength: 160, default: '' },
+                createdAt: { type: 'string', minLength: 1, maxLength: 40 },
+              },
+            },
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const total = request.body.notes.reduce((sum, note) => sum + note.body.length + (note.title?.length || 0) + (note.quote?.length || 0), 0);
+    if (total > REVIEW_MAX_TOTAL_CHARS) return reply.code(413).send({ message: '选中的笔记太长，请缩小时间范围。' });
+    if (Date.now() - windowStart > 60_000) { windowStart = Date.now(); requests = 0; }
+    if (requests >= 20 || active >= 2) return reply.code(429).send({ message: '请求较多，请稍后重试。' });
+    requests++; active++;
+    try {
+      return await runReview({ notes: request.body.notes, focus: request.body.focus?.trim() || undefined });
+    } catch (error) {
+      if (error instanceof ReviewUnavailableError) return reply.code(503).send({ code: 'LLM_NOT_CONFIGURED', message: '还没有配置模型。请先配置 LLM，详见回顾页的提示。' });
+      const text = error instanceof Error ? error.message : '';
+      return reply.code(502).send({ code: 'LLM_FAILED', message: /^LLM |API Key|余额|模型|请求过于频繁|上游服务/.test(text) ? text : '回顾生成失败，请稍后重试。你的笔记没有受到影响。' });
+    } finally { active--; }
+  });
+  app.post<{ Body: AskInput }>('/api/ask/run', {
+    bodyLimit: 64 * 1024,
+    schema: {
+      body: {
+        type: 'object', additionalProperties: false, required: ['track'],
+        properties: {
+          track: { type: 'object', additionalProperties: false, required: ['title'], properties: { title: { type: 'string', maxLength: 160 }, artist: { type: 'string', maxLength: 160, default: '' } } },
+          quote: { type: 'string', maxLength: 400, default: '' },
+          context: { type: 'array', maxItems: 6, default: [], items: { type: 'string', maxLength: 200 } },
+          draft: { type: 'string', maxLength: 3000, default: '' },
+          earlier: { type: 'array', maxItems: 3, default: [], items: { type: 'object', additionalProperties: false, required: ['body', 'createdAt'], properties: { body: { type: 'string', maxLength: 400 }, createdAt: { type: 'string', maxLength: 40 } } } },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    if (Date.now() - windowStart > 60_000) { windowStart = Date.now(); requests = 0; }
+    if (requests >= 20 || active >= 2) return reply.code(429).send({ message: '请求较多，请稍后重试。' });
+    requests++; active++;
+    try {
+      return await runAsk(request.body);
+    } catch (error) {
+      if (error instanceof AskUnavailableError) return reply.code(503).send({ code: 'LLM_NOT_CONFIGURED', message: '还没有配置模型，暂时不能提问。' });
+      const text = error instanceof Error ? error.message : '';
+      return reply.code(502).send({ code: 'LLM_FAILED', message: /^LLM |API Key|余额|模型|请求过于频繁|上游服务/.test(text) ? text : '这次没问出来，稍后再试。你的笔记没有受到影响。' });
+    } finally { active--; }
+  });
+  app.post<{ Body: TasteInput }>('/api/taste/run', {
+    bodyLimit: 64 * 1024,
+    schema: {
+      body: {
+        type: 'object', additionalProperties: false, required: ['totalMinutes', 'sessions', 'topSongs', 'topArtists', 'byHour', 'last14Days', 'recent'],
+        properties: {
+          totalMinutes: { type: 'number', minimum: 0 }, sessions: { type: 'number', minimum: 0 },
+          topSongs: { type: 'array', maxItems: 15, items: { type: 'object', required: ['name'], properties: { name: { type: 'string', maxLength: 100 }, artist: { type: 'string', maxLength: 100, default: '' }, plays: { type: 'number', default: 0 }, minutes: { type: 'number', default: 0 } } } },
+          topArtists: { type: 'array', maxItems: 12, items: { type: 'object', required: ['name'], properties: { name: { type: 'string', maxLength: 100 }, plays: { type: 'number', default: 0 }, minutes: { type: 'number', default: 0 } } } },
+          byHour: { type: 'array', minItems: 24, maxItems: 24, items: { type: 'number', minimum: 0 } },
+          last14Days: { type: 'array', maxItems: 14, items: { type: 'object', required: ['date'], properties: { date: { type: 'string', maxLength: 12 }, minutes: { type: 'number', default: 0 } } } },
+          recent: { type: 'array', maxItems: 40, items: { type: 'object', required: ['name', 'at'], properties: { name: { type: 'string', maxLength: 100 }, artist: { type: 'string', maxLength: 100, default: '' }, at: { type: 'string', maxLength: 20 }, listenMin: { type: 'number', default: 0 }, completed: { type: 'boolean', default: false } } } },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    if (Date.now() - windowStart > 60_000) { windowStart = Date.now(); requests = 0; }
+    if (requests >= 20 || active >= 2) return reply.code(429).send({ message: '请求较多，请稍后重试。' });
+    requests++; active++;
+    try {
+      return await runTaste(request.body);
+    } catch (error) {
+      if (error instanceof TasteUnavailableError) return reply.code(503).send({ code: 'LLM_NOT_CONFIGURED', message: '还没有配置模型，暂时不能分析。' });
+      const text = error instanceof Error ? error.message : '';
+      return reply.code(502).send({ code: 'LLM_FAILED', message: /^LLM |API Key|余额|模型|请求过于频繁|上游服务/.test(text) ? text : '这次没分析出来，稍后再试。' });
     } finally { active--; }
   });
   app.setErrorHandler((error, _request, reply) => {

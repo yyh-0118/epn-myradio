@@ -43,18 +43,21 @@ function namedFunctionSource(source, name) {
   return '';
 }
 
-test('home hero picker only exposes MP4 files and validates the selected file', () => {
+test('home hero picker accepts videos, animated images and still photos and rejects the rest', () => {
   assert.match(
     indexHtml,
-    /id="home-dashboard-video-input"[^>]*type="file"[^>]*accept="\.mp4,video\/mp4"/,
+    /id="home-dashboard-video-input"[^>]*type="file"[^>]*accept="[^"]*\.mp4[^"]*\.gif[^"]*\.jpg[^"]*"/,
   );
-  const validatorSource = namedFunctionSource(dashboardScript, 'homeDashboardIsMp4File');
-  assert.ok(validatorSource, 'expected homeDashboardIsMp4File()');
-  const isMp4 = vm.runInNewContext(`(${validatorSource})`);
-  assert.equal(isMp4({ name: 'hero.mp4', type: 'video/mp4' }), true);
-  assert.equal(isMp4({ name: 'hero.MP4', type: '' }), true);
-  assert.equal(isMp4({ name: 'hero.webm', type: 'video/webm' }), false);
-  assert.equal(isMp4({ name: 'hero.mp4', type: 'video/quicktime' }), false);
+  const exts = dashboardScript.match(/var HOME_BG_VIDEO_EXT = [^;]+;\s*var HOME_BG_IMAGE_EXT = [^;]+;/)[0];
+  const classifySource = namedFunctionSource(dashboardScript, 'homeDashboardClassifyBackground');
+  assert.ok(classifySource, 'expected homeDashboardClassifyBackground()');
+  const classify = vm.runInNewContext(`${exts}(${classifySource})`);
+  assert.equal(classify({ name: 'a.mp4', type: 'video/mp4' }).kind, 'video');
+  assert.equal(classify({ name: 'live.MOV', type: '' }).kind, 'video');
+  assert.equal(classify({ name: 'a.gif', type: 'image/gif' }).kind, 'image');
+  assert.equal(classify({ name: 'a.JPG', type: '' }).kind, 'image');
+  assert.match(classify({ name: 'a.heic', type: 'image/heic' }).error, /HEIC/);
+  assert.ok(classify({ name: 'a.pdf', type: 'application/pdf' }).error);
 });
 
 test('home hero video has isolated persistence and never enters global wallpaper paths', () => {
@@ -95,12 +98,9 @@ test('home hero video is low-impact and releases its object URL off home', () =>
 
 test('platform recommendation entry uses real feeds and does not synthesize radio searches', () => {
   assert.match(indexHtml, /id="home-platform-recommend-mask"/);
-  for (const source of ['netease', 'qishui', 'qq', 'kugou', 'spotify']) {
+  for (const source of ['netease', 'qishui', 'qq', 'kugou']) {
     assert.match(indexHtml, new RegExp(`data-home-recommend-source="${source}"`));
   }
-  const openRadio = namedFunctionSource(dashboardScript, 'openHomeDashboardRadio');
-  assert.match(openRadio, /openHomePlatformRecommendations\s*\(/);
-  assert.doesNotMatch(openRadio, /runHomeSearch|通勤|深夜|专注|私人电台/);
   const openCharts = namedFunctionSource(dashboardScript, 'openHomeDashboardCharts');
   assert.match(openCharts, /openHomePlatformRecommendations\s*\(\s*['"]netease['"]\s*\)/);
   assert.doesNotMatch(openCharts, /runHomeSearch|今日热歌/);
@@ -110,7 +110,6 @@ test('platform recommendation entry uses real feeds and does not synthesize radi
   const feedConfig = namedFunctionSource(dashboardScript, 'homePlatformRecommendationFeedConfig');
   assert.match(feedConfig, /\/api\/qishui\/feed/);
   assert.match(feedConfig, /\/api\/kugou\/recommendations/);
-  assert.match(feedConfig, /\/api\/spotify\/recommendations/);
   assert.doesNotMatch(feedConfig, /\/api\/qq\/|search/);
   assert.match(namedFunctionSource(dashboardScript, 'loadHomePlatformFeedRecommendations'), /apiJson\s*\(\s*config\.endpoint/);
   assert.match(namedFunctionSource(dashboardScript, 'loadHomePlatformFeedRecommendations'), /feedState\.fallback/);
@@ -118,7 +117,5 @@ test('platform recommendation entry uses real feeds and does not synthesize radi
   assert.match(namedFunctionSource(dashboardScript, 'renderHomePlatformRecommendations'), /liked-affinity/);
   assert.match(namedFunctionSource(dashboardScript, 'renderHomePlatformRecommendations'), /personal-top/);
   assert.match(dashboardScript, /当前版本没有可验证的平台推荐接口，未使用关键词搜索替代/);
-  const discoverySongs = namedFunctionSource(dashboardScript, 'homeDashboardDiscoverySongs');
-  assert.doesNotMatch(discoverySongs, /homeWeatherRadioState/);
-  assert.doesNotMatch(indexHtml.match(/<button class="home-insight-card home-ranking-entry home-radio-entry"[\s\S]*?<\/button>/)[0], /天气|通勤|深夜|专注/);
+  assert.doesNotMatch(indexHtml, /home-ranking-entry|home-radio-entry/);
 });

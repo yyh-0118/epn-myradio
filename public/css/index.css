@@ -17925,144 +17925,6 @@ body.panel-reordering .mini-queue-item.is-reordering {
   transform: scaleX(-1)
 }
 
-#empty-home .home-discovery-strip {
-  grid-column: 1 / -1;
-  min-height: 104px;
-  padding: 12px 14px;
-  display: grid;
-  grid-template-columns: minmax(160px, .48fr) minmax(0, 1.52fr);
-  align-items: center;
-  gap: 14px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .09);
-  border-radius: 21px;
-  background: linear-gradient(120deg, rgba(16, 20, 27, .55), rgba(7, 9, 13, .66));
-  box-shadow: 0 14px 38px rgba(0, 0, 0, .20), inset 0 1px 0 rgba(255, 255, 255, .06);
-  color: #fff;
-  backdrop-filter: blur(25px) saturate(1.18);
-  -webkit-backdrop-filter: blur(25px) saturate(1.18);
-  contain: layout paint style;
-  transition: transform .22s, border-color .22s, background .22s, box-shadow .22s
-}
-
-#empty-home .home-discovery-copy {
-  min-width: 0;
-  padding-left: 4px
-}
-
-#empty-home .home-discovery-title {
-  display: block;
-  margin-top: 7px;
-  font-size: 17px;
-  font-weight: 790;
-  color: rgba(255, 255, 255, .96)
-}
-
-#empty-home .home-discovery-sub {
-  display: block;
-  margin-top: 5px;
-  font-size: 10px;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, .43)
-}
-
-#empty-home .home-discovery-list {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 9px
-}
-
-#empty-home .home-discovery-list.is-empty {
-  grid-template-columns: 1fr
-}
-
-#empty-home .home-discovery-song {
-  min-width: 0;
-  height: 78px;
-  padding: 8px;
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  border: 1px solid rgba(255, 255, 255, .075);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, .035);
-  color: #fff;
-  text-align: left;
-  font-family: inherit;
-  cursor: pointer;
-  transition: transform .18s, border-color .18s, background .18s
-}
-
-#empty-home .home-discovery-song:hover {
-  transform: translateY(-2px);
-  border-color: rgba(var(--fc-accent-rgb), .32);
-  background: rgba(var(--fc-accent-rgb), .07)
-}
-
-#empty-home .home-discovery-cover {
-  width: 58px;
-  height: 58px;
-  border-radius: 13px;
-  background: linear-gradient(135deg, rgba(var(--fc-accent-rgb), .30), rgba(36, 66, 255, .24), rgba(8, 10, 14, .86));
-  background-position: center;
-  background-size: cover;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, .25)
-}
-
-#empty-home .home-discovery-song-copy {
-  min-width: 0
-}
-
-#empty-home .home-discovery-song-name,
-#empty-home .home-discovery-song-artist {
-  display: block;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis
-}
-
-#empty-home .home-discovery-song-name {
-  font-size: 12px;
-  font-weight: 760
-}
-
-#empty-home .home-discovery-song-artist {
-  margin-top: 6px;
-  font-size: 9.5px;
-  color: rgba(255, 255, 255, .44)
-}
-
-#empty-home .home-discovery-empty {
-  width: 100%;
-  min-height: 72px;
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 5px;
-  border: 1px dashed rgba(255, 255, 255, .12);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, .025);
-  color: rgba(255, 255, 255, .82);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer
-}
-
-#empty-home .home-discovery-empty span {
-  font-size: 10px;
-  color: rgba(255, 255, 255, .43)
-}
-
-#empty-home .home-discovery-song:focus-visible,
-#empty-home .home-discovery-empty:focus-visible {
-  outline: 1px solid rgba(var(--fc-accent-rgb), .82);
-  outline-offset: 2px
-}
-
 #empty-home .home-legacy-rail {
   display: none
 }
@@ -18152,8 +18014,7 @@ body.panel-reordering .mini-queue-item.is-reordering {
   }
 
   #empty-home .home-card,
-  #empty-home .home-insight-card,
-  #empty-home .home-discovery-strip {
+  #empty-home .home-insight-card {
     contain: layout paint style;
     animation: none !important;
     backdrop-filter: none !important;
@@ -18217,18 +18078,6 @@ body.panel-reordering .mini-queue-item.is-reordering {
 
   #empty-home .home-insight-dock {
     grid-template-columns: 1fr
-  }
-
-  #empty-home .home-discovery-strip {
-    grid-template-columns: 1fr
-  }
-
-  #empty-home .home-discovery-list {
-    grid-template-columns: 1fr
-  }
-
-  #empty-home .home-discovery-song {
-    height: 70px
   }
 
   #empty-home .home-listen-metrics {

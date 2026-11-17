@@ -1,15 +1,17 @@
-import { Archive, BookOpen, Check, ChevronLeft, Clock3, Database, Download, Feather, Library, LoaderCircle, Music2, Pause, Play, Radio, RotateCcw, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { Archive, BookMarked, BookOpen, Check, ChevronLeft, Clock3, Database, Download, Feather, Library, LoaderCircle, Music2, Pause, Play, Radio, RotateCcw, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../lib/storage';
 import { HostRepository } from './repository';
 import { AnalysisPanel } from '../components/AnalysisPanel';
+import { ReviewPanel } from '../components/ReviewPanel';
+import { AskPrompt } from '../components/AskPrompt';
 import { formatTime } from '../lib/lyrics';
-import type { Moment, Track } from '../types';
+import type { AskInput, Moment, Track } from '../types';
 import { MineradioBridge } from './bridge-client';
 import type { BackupInfo, HostCapture, HostSnapshot, ImportPreview, RecoveryInfo } from './contract';
 import './embedded.css';
 
-type Tab = 'write' | 'library' | 'analysis';
+type Tab = 'write' | 'library' | 'analysis' | 'review';
 
 export default function EmbeddedApp() {
   const bridge = useMemo(() => new MineradioBridge(), []);
@@ -163,6 +165,25 @@ export default function EmbeddedApp() {
     scheduleMomentSave(next);
   }
 
+  function buildAskInput(moment: Moment): AskInput {
+    const host = snapshotRef.current;
+    const lines = host?.track?.id === moment.trackId ? host.lyrics : [];
+    const index = lines.findIndex((line) => line.id === moment.lineId);
+    const context = index >= 0 ? lines.slice(Math.max(0, index - 2), index + 3).map((line) => line.text.trim()).filter(Boolean) : [];
+    const earlier = momentsRef.current
+      .filter((item) => item.id !== moment.id && item.trackId === moment.trackId && item.body.trim())
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3)
+      .map((item) => ({ body: item.body.trim().slice(0, 400), createdAt: item.createdAt }));
+    const latest = momentsRef.current.find((item) => item.id === moment.id) || moment;
+    return { track: { title: moment.trackTitle, artist: moment.artist }, quote: moment.quote.slice(0, 400), context, draft: latest.body.slice(0, 3000), earlier };
+  }
+
+  function insertQuestion(question: string) {
+    const current = momentsRef.current.find((moment) => moment.id === activeId);
+    if (!current) return;
+    updateMoment({ body: `${current.body.trim() ? `${current.body.replace(/\s+$/, '')}\n\n` : ''}问：${question}\n` });
+  }
+
   function requestCapture(lineId?: string) { bridge.send('child.capture.request', { lineId: lineId || null }); }
   async function replay(moment: Moment) {
     const track = tracks.find((item) => item.id === moment.trackId);
@@ -299,6 +320,7 @@ export default function EmbeddedApp() {
     <aside className="embedded-nav">
       <button className={tab === 'write' ? 'active' : ''} onClick={() => void navigate('write')}><Feather size={18} /><span>写下</span></button>
       <button className={tab === 'library' ? 'active' : ''} onClick={() => void navigate('library')}><Library size={18} /><span>瞬间</span><b>{moments.length}</b></button>
+      <button className={tab === 'review' ? 'active' : ''} onClick={() => void navigate('review')}><BookMarked size={18} /><span>回顾</span></button>
       <button className={tab === 'analysis' ? 'active' : ''} onClick={() => void navigate('analysis')}><Sparkles size={18} /><span>分析</span></button>
     </aside>
     <main className="embedded-main">
@@ -308,6 +330,7 @@ export default function EmbeddedApp() {
         <div className="note-layout">
           <article className="writing-page">
             <div className="source-card"><div><Music2 size={13} /><span>{active.trackTitle}</span><small>{formatTime(active.at)}</small></div><blockquote>“{active.quote || '这一刻没有歌词，但声音还在。'}”</blockquote><button disabled={replayState === 'loading'} onClick={() => void replay(active)}>{replayState === 'loading' ? <LoaderCircle className="spinner" size={12} /> : <Play size={12} fill="currentColor" />}{replayState === 'loading' ? '正在恢复歌曲…' : replayState === 'error' ? '暂时无法恢复，点击重试' : '从前 3 秒回听'}</button></div>
+            <AskPrompt momentId={active.id} buildInput={() => buildAskInput(active)} onUse={insertQuestion} />
             <input aria-label="笔记标题" value={active.title} maxLength={120} onChange={(event) => updateMoment({ title: event.target.value })} placeholder="给这个瞬间起个名字，也可以先空着" />
             <textarea aria-label="瞬间笔记" autoFocus value={active.body} maxLength={100000} onChange={(event) => updateMoment({ body: event.target.value })} placeholder={'刚才，你想到了什么？\n\n不必完整，也不必漂亮。先别让那个念头跑掉。'} />
             <footer><span>{active.body.length} 字 · {new Date(active.createdAt).toLocaleDateString('zh-CN')}</span><button onClick={() => downloadFile(`${(active.title || '余响笔记').replace(/[<>:"/\\|?*]/g, '_')}.md`, `# ${active.title || '一个听歌瞬间'}\n\n> ${active.quote}\n\n${active.body}`, 'text/markdown;charset=utf-8')}>导出 Markdown</button></footer>
@@ -320,6 +343,7 @@ export default function EmbeddedApp() {
         <div className="capture-principles"><span><Clock3 size={15} /><b>音乐不中断</b><small>主播放器继续掌管声音</small></span><span><Feather size={15} /><b>先写，后分析</b><small>不让工具盖过你的感受</small></span><span><Database size={15} /><b>上下文已关联</b><small>曲目、歌词与时间一起留下</small></span></div>
       </section>)}
       {tab === 'library' && <section className="embedded-library"><div className="library-heading"><div><span className="section-kicker">YOUR ECHO ARCHIVE</span><h1>那些想留下的瞬间</h1></div><div className="library-tools"><label><Search size={15} /><input aria-label="搜索瞬间" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索歌名、歌词或自己的话" /></label>{snapshot?.capabilities.notebookArchive && <button className="archive-button" onClick={() => void openArchive()}><Archive size={15} />存档</button>}</div></div>{filtered.length ? <div className="library-grid">{filtered.map((moment) => <article key={moment.id}><button className="open-card" onClick={() => void navigate('write', moment.id)}><div><span>{formatTime(moment.at)}</span><span>{new Date(moment.createdAt).toLocaleDateString('zh-CN')}</span></div><blockquote>“{moment.quote || '一个没有歌词的瞬间'}”</blockquote><h3>{moment.title || '还没起名字的瞬间'}</h3><p>{moment.body || '这里还留着一页空白，等你回来接着写。'}</p><small>{moment.trackTitle} · {moment.artist}</small></button><button className="delete-card" aria-label={`删除 ${moment.title || '未命名瞬间'}`} onClick={() => void removeMoment(moment)}><Trash2 size={13} /></button></article>)}</div> : <div className="library-zero"><BookOpen size={31} /><h2>这里还很安静。</h2><p>回到正在播放的歌词，留下第一个瞬间。</p><button onClick={() => void navigate('write')}>回到此刻</button></div>}</section>}
+      {tab === 'review' && <ReviewPanel moments={moments} onOpen={(id) => void navigate('write', id)} />}
       {tab === 'analysis' && <section className="analysis-scaffold"><span className="section-kicker">ECHOPULSENODE · LIVE ANALYSIS</span><h1>理解作品，但不替你感动。</h1><div className="embedded-analysis-layout"><AnalysisPanel track={analysisTrack} /><div><div className="analysis-frame"><Sparkles size={27} /><div><h2>{snapshot?.capabilities.epnAnalysis ? 'EPN 本地分析服务已连接' : 'EPN 服务暂时不可用'}</h2><p>主动点击后，只发送当前歌词、歌名与歌手。播放器账户、Cookie、音频地址与私人笔记不会发送到分析层。</p></div><span>{snapshot?.capabilities.epnAnalysis ? '服务可用' : '可稍后重试'}</span></div><div className="boundary-grid"><div><b>会发送</b><p>用户主动选择的歌词、歌名与歌手</p></div><div><b>不会发送</b><p>音乐账户令牌、音频地址、未授权的私人笔记</p></div><div><b>结果边界</b><p>情感是文本解释角度，不是客观心理结论</p></div></div></div></div></section>}
     </main>
     {archiveOpen && <div className="archive-modal-backdrop" role="presentation"><section className="archive-modal" role="dialog" aria-modal="true" aria-label="完整存档与备份"><header><div><Archive size={18} /><span><strong>完整存档与备份</strong><small>只包含笔记、歌词和安全曲目标识</small></span></div><button aria-label="关闭存档管理" disabled={archiveBusy} onClick={() => { setArchiveOpen(false); setImportPlan(null); }}><X size={17} /></button></header>

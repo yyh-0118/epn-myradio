@@ -4667,6 +4667,9 @@ async function proxyAfterglowApi(req, res, pathname) {
   const routes = {
     '/afterglow-api/health': { method: 'GET', target: '/api/health', timeout: 3000 },
     '/afterglow-api/analysis/run': { method: 'POST', target: '/api/analysis/run', timeout: 55000 },
+    '/afterglow-api/taste/run': { method: 'POST', target: '/api/taste/run', timeout: 58000, maxBody: 64 * 1024 },
+    '/afterglow-api/ask/run': { method: 'POST', target: '/api/ask/run', timeout: 58000, maxBody: 64 * 1024 },
+    '/afterglow-api/review/run': { method: 'POST', target: '/api/review/run', timeout: 58000, maxBody: 256 * 1024 },
   };
   const route = routes[pathname];
   if (!route) { sendAfterglowJSON(res, { ok: false, error: 'AFTERGLOW_ROUTE_NOT_FOUND' }, 404); return; }
@@ -4682,8 +4685,9 @@ async function proxyAfterglowApi(req, res, pathname) {
       return;
     }
     const declared = Number(req.headers['content-length'] || 0);
-    if (declared > 128 * 1024) { sendAfterglowJSON(res, { ok: false, error: 'AFTERGLOW_BODY_TOO_LARGE' }, 413); return; }
-    try { body = await readAfterglowProxyBody(req, 128 * 1024); }
+    const maxBody = route.maxBody || 128 * 1024;
+    if (declared > maxBody) { sendAfterglowJSON(res, { ok: false, error: 'AFTERGLOW_BODY_TOO_LARGE' }, 413); return; }
+    try { body = await readAfterglowProxyBody(req, maxBody); }
     catch (_) { sendAfterglowJSON(res, { ok: false, error: 'AFTERGLOW_BODY_TOO_LARGE' }, 413); return; }
   }
   await new Promise((resolve) => {
@@ -4731,7 +4735,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
 
-  if (pn === '/afterglow-api/health' || pn === '/afterglow-api/analysis/run' || pn.indexOf('/afterglow-api/') === 0) {
+  if (pn === '/afterglow-api/health' || pn === '/afterglow-api/analysis/run' || pn === '/afterglow-api/review/run' || pn === '/afterglow-api/ask/run' || pn === '/afterglow-api/taste/run' || pn.indexOf('/afterglow-api/') === 0) {
     await proxyAfterglowApi(req, res, pn);
     return;
   }
