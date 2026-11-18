@@ -6173,6 +6173,14 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    if (process.platform === 'darwin' && app.dock) {
+      try {
+        const dockIcon = path.join(__dirname, '..', 'build', 'icon.png');
+        if (fs.existsSync(dockIcon)) app.dock.setIcon(dockIcon);
+      } catch (error) {
+        console.warn('[Dock] icon unavailable:', error && error.message || error);
+      }
+    }
     try {
       await localMusicLibrary.installProtocol(protocol);
     } catch (error) {

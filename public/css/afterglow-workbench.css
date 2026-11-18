@@ -72,3 +72,12 @@ body.afterglow-workbench-open #afterglow-capture-dock { opacity: 0; pointer-even
   #afterglow-capture-dock.has-stage-pick .afterglow-capture-icon, .afterglow-book-proxy, .afterglow-book-leaf { animation: none; }
   .afterglow-book-proxy { display: none; }
 }
+
+#afterglow-capture-dock { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
+#afterglow-capture-dock[aria-disabled="true"] { cursor: grab; }
+#afterglow-capture-dock.is-dragging { cursor: grabbing; transition: opacity .25s, border-color .25s, background .25s; opacity: 1; transform: translateY(0); border-color: rgba(188, 227, 214, .5); box-shadow: 0 24px 60px rgba(0, 0, 0, .5), 0 0 0 1px rgba(175, 220, 197, .12); }
+
+/* DIY mode: keep the player controls and panels above the capture bar */
+body.diy-mode #afterglow-capture-dock { z-index: 5; }
+body.diy-mode #fx-fab { background: linear-gradient(145deg, rgba(58, 66, 70, .98), rgba(22, 28, 31, .98)) !important; }
+body.diy-mode #fx-fab:hover, body.diy-mode #fx-fab.active { background: linear-gradient(145deg, rgba(70, 82, 86, .99), rgba(28, 36, 39, .99)) !important; }

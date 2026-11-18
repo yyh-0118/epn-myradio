@@ -455,6 +455,96 @@
       });
   }
 
+  var DOCK_POS_KEY = 'mineradio-afterglow-dock-pos-v1';
+  var DOCK_MARGIN = 8;
+  var dockDrag = { active: false, moved: false, suppressClick: false, pointerId: null, x: 0, y: 0, right: 0, bottom: 0 };
+
+  function clampDockOffsets(right, bottom) {
+    var maxRight = Math.max(DOCK_MARGIN, window.innerWidth - captureDock.offsetWidth - DOCK_MARGIN);
+    var maxBottom = Math.max(DOCK_MARGIN, window.innerHeight - captureDock.offsetHeight - DOCK_MARGIN);
+    return {
+      right: Math.round(Math.min(maxRight, Math.max(DOCK_MARGIN, right))),
+      bottom: Math.round(Math.min(maxBottom, Math.max(DOCK_MARGIN, bottom)))
+    };
+  }
+
+  function applyDockOffsets(offsets) {
+    captureDock.style.right = offsets.right + 'px';
+    captureDock.style.bottom = offsets.bottom + 'px';
+  }
+
+  function readSavedDockOffsets() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(DOCK_POS_KEY) || 'null');
+      if (saved && isFinite(saved.right) && isFinite(saved.bottom)) return { right: Number(saved.right), bottom: Number(saved.bottom) };
+    } catch (_error) { }
+    return null;
+  }
+
+  function currentDockOffsets() {
+    var style = window.getComputedStyle(captureDock);
+    return { right: parseFloat(style.right) || 0, bottom: parseFloat(style.bottom) || 0 };
+  }
+
+  function restoreDockPosition() {
+    var saved = readSavedDockOffsets();
+    if (saved) applyDockOffsets(clampDockOffsets(saved.right, saved.bottom));
+  }
+
+  function resetDockPosition() {
+    try { localStorage.removeItem(DOCK_POS_KEY); } catch (_error) { }
+    captureDock.style.right = '';
+    captureDock.style.bottom = '';
+  }
+
+  function bindDockDrag() {
+    captureDock.addEventListener('pointerdown', function (event) {
+      if (event.button !== 0 || !event.isPrimary) return;
+      var start = currentDockOffsets();
+      dockDrag.active = true;
+      dockDrag.moved = false;
+      dockDrag.pointerId = event.pointerId;
+      dockDrag.x = event.clientX;
+      dockDrag.y = event.clientY;
+      dockDrag.right = start.right;
+      dockDrag.bottom = start.bottom;
+      try { captureDock.setPointerCapture(event.pointerId); } catch (_error) { }
+    });
+    captureDock.addEventListener('pointermove', function (event) {
+      if (!dockDrag.active || event.pointerId !== dockDrag.pointerId) return;
+      var dx = event.clientX - dockDrag.x;
+      var dy = event.clientY - dockDrag.y;
+      if (!dockDrag.moved) {
+        if (Math.hypot(dx, dy) < 5) return;
+        dockDrag.moved = true;
+        captureDock.classList.add('is-dragging');
+      }
+      applyDockOffsets(clampDockOffsets(dockDrag.right - dx, dockDrag.bottom - dy));
+    });
+    function endDrag(event) {
+      if (!dockDrag.active || event.pointerId !== dockDrag.pointerId) return;
+      dockDrag.active = false;
+      try { captureDock.releasePointerCapture(event.pointerId); } catch (_error) { }
+      captureDock.classList.remove('is-dragging');
+      if (!dockDrag.moved) return;
+      dockDrag.suppressClick = true;
+      setTimeout(function () { dockDrag.suppressClick = false; }, 60);
+      try { localStorage.setItem(DOCK_POS_KEY, JSON.stringify(currentDockOffsets())); } catch (_error) { }
+    }
+    captureDock.addEventListener('pointerup', endDrag);
+    captureDock.addEventListener('pointercancel', endDrag);
+    captureDock.addEventListener('contextmenu', function (event) {
+      event.preventDefault();
+      resetDockPosition();
+      if (typeof showToast === 'function') showToast('已恢复记录条的默认位置');
+    });
+    window.addEventListener('resize', function () {
+      if (readSavedDockOffsets()) restoreDockPosition();
+      else if (captureDock.style.right) applyDockOffsets(clampDockOffsets(currentDockOffsets().right, currentDockOffsets().bottom));
+    });
+    restoreDockPosition();
+  }
+
   function updateDock() {
     if (!captureDock) return;
     var song = currentSong();
@@ -467,7 +557,7 @@
     var meta = captureDock.querySelector('.afterglow-capture-meta');
     captureDock.classList.toggle('has-track', !!track);
     captureDock.classList.toggle('has-stage-pick', selectedIndex >= 0);
-    captureDock.disabled = !track;
+    captureDock.setAttribute('aria-disabled', track ? 'false' : 'true');
     if (quote) quote.textContent = index >= 0 ? lines[index].text : (track ? '记录正在播放的这一刻' : '播放音乐后开始记录');
     if (meta) meta.textContent = track ? (selectedIndex >= 0 ? '已选中歌词 · 点击打开记录页' : track.title + ' · 记录此刻') : 'AFTERGLOW';
     if (trackKeyOf(song) !== lastTrackKey || index !== lastLineIndex) {
@@ -500,13 +590,16 @@
     captureDock.type = 'button';
     captureDock.setAttribute('aria-label', '记录当前歌词与播放时刻');
     captureDock.innerHTML = '<span class="afterglow-capture-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11c1.7 0 3 1.3 3 3v12c0-1.7-1.3-3-3-3H4V5.5Z"/><path d="M20 5.5C20 4.7 19.3 4 18.5 4H14v15c0-1.7 1.3-3 3-3h3V5.5Z"/></svg></span><span><strong class="afterglow-capture-quote">播放音乐后开始记录</strong><small class="afterglow-capture-meta">AFTERGLOW</small></span>';
+    captureDock.title = '拖动可移动位置，右键恢复默认位置';
     captureDock.addEventListener('click', function () {
+      if (dockDrag.suppressClick) { dockDrag.suppressClick = false; return; }
       var lineId = selectedStageLineId;
       selectedStageLineId = '';
       selectedStageLineUntil = 0;
       requestCapture(lineId, lineId ? 'stage-lyric' : 'host-button');
     });
     document.body.appendChild(captureDock);
+    bindDockDrag();
     updateDock();
     checkAnalysisHealth();
     setInterval(updateDock, 700);
