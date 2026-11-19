@@ -1,37 +1,26 @@
-import { BookMarked, LoaderCircle, RefreshCw, ShieldAlert } from 'lucide-react';
+import { BookMarked, History, LoaderCircle, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Moment, ReviewResult } from '../types';
+import { REVIEW_RANGES, addReviewRecord, clearReviewHistory, deleteReviewRecord, readConsent, readReviewHistory, reviewNudge, selectReviewNotes, writeConsent } from '../lib/review-store';
+import type { Moment, ReviewRangeId, ReviewRecord, ReviewResult } from '../types';
 
 const apiPrefix = new URLSearchParams(window.location.search).get('host') === 'mineradio' ? '/afterglow-api' : '/api';
-const RANGES = [{ id: '7', label: '最近 7 天', days: 7 }, { id: '30', label: '最近 30 天', days: 30 }, { id: '90', label: '最近 90 天', days: 90 }, { id: 'all', label: '全部', days: 0 }] as const;
-const MAX_NOTES = 60;
-const MAX_TOTAL_CHARS = 30000;
-
-function selectNotes(moments: Moment[], days: number) {
-  const since = days ? Date.now() - days * 86400_000 : 0;
-  const picked: Moment[] = [];
-  let total = 0;
-  for (const moment of [...moments].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
-    if (!moment.body.trim() || Date.parse(moment.createdAt) < since) continue;
-    const size = Math.min(moment.body.length, 4000) + moment.title.length + Math.min(moment.quote.length, 400);
-    if (picked.length >= MAX_NOTES || total + size > MAX_TOTAL_CHARS) break;
-    picked.push(moment);
-    total += size;
-  }
-  return picked;
-}
+const dateText = (iso: string) => new Date(iso).toLocaleDateString('zh-CN');
 
 export function ReviewPanel({ moments, onOpen }: { moments: Moment[]; onOpen: (id: string) => void }) {
-  const [range, setRange] = useState<(typeof RANGES)[number]['id']>('30');
+  const [range, setRange] = useState<ReviewRangeId>('30');
   const [focus, setFocus] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<{ data: ReviewResult; range: string; at: number } | null>(null);
+  const [notice, setNotice] = useState('');
+  const [consent, setConsent] = useState(() => readConsent());
+  const [history, setHistory] = useState<ReviewRecord[]>(() => readReviewHistory());
+  const [shown, setShown] = useState<ReviewRecord | null>(() => readReviewHistory()[0] ?? null);
   const [llmReady, setLlmReady] = useState<boolean | null>(null);
   const controller = useRef<AbortController | null>(null);
-  const days = RANGES.find((item) => item.id === range)!.days;
-  const notes = useMemo(() => selectNotes(moments, days), [moments, days]);
+  const days = REVIEW_RANGES.find((item) => item.id === range)!.days;
+  const { picked: notes, eligible } = useMemo(() => selectReviewNotes(moments, days), [moments, days]);
   const byId = useMemo(() => new Map(moments.map((moment) => [moment.id, moment])), [moments]);
+  const nudge = useMemo(() => reviewNudge(moments, history), [moments, history]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -40,46 +29,101 @@ export function ReviewPanel({ moments, onOpen }: { moments: Moment[]; onOpen: (i
   }, []);
   useEffect(() => () => controller.current?.abort(), []);
 
+  function toggleConsent(next: boolean) { setConsent(next); writeConsent(next); }
+
   async function run() {
+    if (!consent) return;
     controller.current?.abort();
     const abort = new AbortController(); controller.current = abort;
-    setBusy(true); setError('');
+    const usedNotes = notes; const usedRange = REVIEW_RANGES.find((item) => item.id === range)!; const usedFocus = focus.trim();
+    setBusy(true); setError(''); setNotice('');
     try {
       const response = await fetch(`${apiPrefix}/review/run`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(60_000)]),
         body: JSON.stringify({
-          focus: focus.trim() || undefined,
-          notes: notes.map((note) => ({ id: note.id, title: note.title, body: note.body.slice(0, 4000), quote: note.quote.slice(0, 400), trackTitle: note.trackTitle, artist: note.artist, createdAt: note.createdAt })),
+          focus: usedFocus || undefined,
+          notes: usedNotes.map((note) => ({ id: note.id, title: note.title, body: note.body.slice(0, 4000), quote: note.quote.slice(0, 400), trackTitle: note.trackTitle, artist: note.artist, createdAt: note.createdAt })),
         }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.message || '回顾生成失败，请稍后重试。');
       if (abort.signal.aborted) return;
-      setResult({ data: body as ReviewResult, range: RANGES.find((item) => item.id === range)!.label, at: Date.now() });
+      const data: ReviewResult = { ...body, moods: Array.isArray(body.moods) ? body.moods : [], warnings: Array.isArray(body.warnings) ? body.warnings : [] };
+      const record: ReviewRecord = {
+        id: crypto.randomUUID(), createdAt: new Date().toISOString(), rangeId: usedRange.id, rangeLabel: usedRange.label, focus: usedFocus, data,
+        refs: Object.fromEntries(usedNotes.map((note) => [note.id, { createdAt: note.createdAt, trackTitle: note.trackTitle }])),
+      };
+      const saved = addReviewRecord(record);
+      setHistory(saved.list); setShown(record);
+      if (!saved.saved) setNotice('这份回顾没能保存到本机历史，离开此页后会消失。');
     } catch (reason) {
       if (!abort.signal.aborted) setError(reason instanceof Error && reason.name !== 'TimeoutError' && reason.name !== 'SyntaxError' && reason.name !== 'TypeError' ? reason.message : '回顾超时或服务未启动。笔记没有受到影响，请稍后重试。');
     } finally { if (!abort.signal.aborted) setBusy(false); }
   }
 
+  function removeRecord(id: string) {
+    const list = deleteReviewRecord(id);
+    setHistory(list);
+    if (shown?.id === id) setShown(list[0] ?? null);
+  }
+
+  function clearAll() {
+    if (!confirm('清空全部回顾历史？只会删除保存的回顾结果，你的笔记不受影响。')) return;
+    clearReviewHistory(); setHistory([]); setShown(null);
+  }
+
+  function reference(id: string, record: ReviewRecord, key = id) {
+    const note = byId.get(id);
+    const ref = record.refs[id];
+    const when = note?.createdAt ?? ref?.createdAt;
+    const label = `${when ? dateText(when) : '某天'} · ${note?.trackTitle || ref?.trackTitle || '笔记'}`;
+    return note
+      ? <button key={key} onClick={() => onOpen(id)} title={note.body.slice(0, 80)}>{label}</button>
+      : <span key={key} className="review-gone" title="这条笔记已被删除">{label} · 已删除</span>;
+  }
+
+  const moodItems = shown ? [...shown.data.moods].sort((a, b) => (byId.get(a.noteId)?.createdAt ?? shown.refs[a.noteId]?.createdAt ?? '').localeCompare(byId.get(b.noteId)?.createdAt ?? shown.refs[b.noteId]?.createdAt ?? '')) : [];
+
   return <section className="review-panel">
     <span className="section-kicker">LOOKING BACK · WITH YOUR NOTES</span>
     <h1>把这段时间，<br />和你一起读一遍。</h1>
+    {nudge.due && !busy && <div className="review-nudge" role="status">
+      <p>最近一周你写了 {nudge.recentCount} 条笔记，{nudge.daysSince === null ? '还没有回顾过。' : `距上次回顾已 ${nudge.daysSince} 天。`}要不要回头读一遍？不会自动发送，需要你点击。</p>
+      <button onClick={() => setRange('7')}>选中最近 7 天</button>
+    </div>}
     <div className="review-controls">
-      <div className="review-ranges" role="radiogroup" aria-label="回顾范围">{RANGES.map((item) => <button key={item.id} role="radio" aria-checked={range === item.id} className={range === item.id ? 'active' : ''} onClick={() => setRange(item.id)}>{item.label}</button>)}</div>
+      <div className="review-ranges" role="radiogroup" aria-label="回顾范围">{REVIEW_RANGES.map((item) => <button key={item.id} role="radio" aria-checked={range === item.id} className={range === item.id ? 'active' : ''} onClick={() => setRange(item.id)}>{item.label}</button>)}</div>
       <input aria-label="这次想关注什么（可选）" value={focus} maxLength={200} onChange={(event) => setFocus(event.target.value)} placeholder="这次想关注什么？比如：最近为什么总听同一首歌（可不填）" />
-      <button className="review-run" disabled={busy || !notes.length || llmReady === false} onClick={() => void run()}>{busy ? <LoaderCircle className="spinner" size={15} /> : result ? <RefreshCw size={15} /> : <BookMarked size={15} />}{busy ? '正在读你的笔记…' : result ? '重新生成' : `读这 ${notes.length} 条笔记`}</button>
+      <label className="review-consent"><input type="checkbox" checked={consent} onChange={(event) => toggleConsent(event.target.checked)} /><span><b>允许 AI 读取我的笔记</b><small>授权后，点下面的按钮才会把所选笔记发给你配置的模型，随时可关闭。关闭时，「问我一句」也不会附带这首歌的旧笔记。</small></span></label>
+      <button className="review-run" disabled={busy || !consent || !notes.length || llmReady === false} onClick={() => void run()} title={consent ? undefined : '请先勾选“允许 AI 读取我的笔记”'}>{busy ? <LoaderCircle className="spinner" size={15} /> : shown ? <RefreshCw size={15} /> : <BookMarked size={15} />}{busy ? '正在读你的笔记…' : shown ? '重新生成' : `读这 ${notes.length} 条笔记`}</button>
     </div>
-    <div className="review-privacy"><ShieldAlert size={14} /><p>点击后，所选笔记的正文、标题、关联歌词、歌名与歌手会发送到你配置的模型服务；不会发送音乐账户信息或音频地址。只有主动点击才会发送。</p></div>
-    {llmReady === false && <div className="review-setup" role="status"><b>还没有配置模型</b><p>在应用数据目录创建 <code>afterglow-llm.json</code>：<code>{'{"apiUrl":"https://…/chat/completions","apiKey":"…","model":"…"}'}</code>，然后重启应用。macOS 路径：<code>~/Library/Application Support/Mineradio Afterglow/</code>。</p></div>}
+    <div className="review-privacy"><ShieldAlert size={14} /><p>点击后，所选笔记的正文、标题、关联歌词、歌名与歌手会发送到你配置的模型服务；不会发送音乐账户信息或音频地址。只有主动点击才会发送。生成的回顾只保存在本机，可在下方历史里逐条删除。</p></div>
+    {llmReady === false && <div className="review-setup" role="status"><b>还没有配置模型</b><p>在应用数据目录创建 <code>afterglow-llm.json</code>：<code>{'{"apiUrl":"https://…/chat/completions","apiKey":"…","model":"…"}'}</code>，然后重启应用。macOS 路径：<code>~/Library/Application Support/Mineradio Afterglow/</code>。</p><p>想让笔记完全不出本机，可以用本地模型（如 Ollama）：<code>{'{"apiUrl":"http://127.0.0.1:11434/v1/chat/completions","apiKey":"","model":"你拉取的模型名"}'}</code>，apiKey 可留空，仅支持本机回环地址的 http。</p></div>}
     {!notes.length && <p className="review-empty">这个范围里还没有写过文字的笔记。先在听歌时记下几句，再回来读。</p>}
+    {eligible > notes.length && <p className="review-empty">这个范围有 {eligible} 条笔记，一次最多读取最新的 {notes.length} 条。想看更早的，可以缩小范围分段回顾。</p>}
     {error && <p className="review-error" role="alert">{error}</p>}
-    {result && <article className="review-result">
-      <header><span>基于 {result.range} · {result.data.noteCount} 条笔记</span><span>{new Date(result.at).toLocaleTimeString('zh-CN')}</span></header>
-      {result.data.overview && <p className="review-overview">{result.data.overview}</p>}
-      {result.data.themes.map((theme) => <section key={theme.title} className="review-theme"><h3>{theme.title}</h3><p>{theme.body}</p><div>{theme.noteIds.map((id) => { const note = byId.get(id); return note ? <button key={id} onClick={() => onOpen(id)} title={note.body.slice(0, 80)}>{new Date(note.createdAt).toLocaleDateString('zh-CN')} · {note.trackTitle || '笔记'}</button> : null; })}</div></section>)}
-      {result.data.question && <aside className="review-question"><b>想接着问你</b><p>{result.data.question}</p></aside>}
-      {result.data.warnings.map((warning) => <small key={warning}>{warning}</small>)}
+    {notice && <p className="review-error" role="status">{notice}</p>}
+    {shown && <article className="review-result">
+      <header><span>基于 {shown.rangeLabel} · {shown.data.noteCount} 条笔记{shown.focus ? ` · 关注：${shown.focus}` : ''}</span><span>{new Date(shown.createdAt).toLocaleString('zh-CN')}</span></header>
+      {shown.data.overview && <p className="review-overview">{shown.data.overview}</p>}
+      {moodItems.length > 0 && <section className="review-moods"><h3>心情线索</h3><ol>{moodItems.map((item) => {
+        const note = byId.get(item.noteId); const when = note?.createdAt ?? shown.refs[item.noteId]?.createdAt;
+        const content = <><time>{when ? new Date(when).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '—'}</time>{item.mood}</>;
+        const cls = `review-mood tone-${item.tone < 0 ? 'down' : item.tone > 0 ? 'up' : 'mid'}`;
+        return <li key={item.noteId}>{note ? <button className={cls} onClick={() => onOpen(item.noteId)} title={note.body.slice(0, 80)}>{content}</button> : <span className={`${cls} review-gone`} title="这条笔记已被删除">{content}</span>}</li>;
+      })}</ol><small>按时间排列，只取自你写下的文字，不是对你状态的判断。</small></section>}
+      {shown.data.themes.map((theme) => <section key={theme.title} className="review-theme"><h3>{theme.title}</h3><p>{theme.body}</p><div>{theme.noteIds.map((id) => reference(id, shown))}</div></section>)}
+      {shown.data.question && <aside className="review-question"><b>想接着问你</b><p>{shown.data.question}</p></aside>}
+      {shown.data.warnings.map((warning) => <small key={warning}>{warning}</small>)}
       <small>这是模型对你文字的解读，不是结论；每个主题下列出了它依据的笔记，可点开核对。</small>
     </article>}
+    {history.length > 0 && <details className="review-history">
+      <summary><History size={13} />回顾历史 · {history.length} 份</summary>
+      <ul>{history.map((record) => <li key={record.id} className={shown?.id === record.id ? 'current' : ''}>
+        <button className="review-history-open" onClick={() => setShown(record)}><b>{new Date(record.createdAt).toLocaleString('zh-CN')}</b><span>{record.rangeLabel} · {record.data.noteCount} 条笔记</span><small>{record.data.overview.slice(0, 48)}{record.data.overview.length > 48 ? '…' : ''}</small></button>
+        <button className="review-history-delete" aria-label="删除这份回顾" title="删除这份回顾" onClick={() => removeRecord(record.id)}><Trash2 size={13} /></button>
+      </li>)}</ul>
+      <button className="review-history-clear" onClick={clearAll}>清空全部回顾历史</button>
+    </details>}
   </section>;
 }

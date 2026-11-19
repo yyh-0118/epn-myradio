@@ -49,12 +49,25 @@ export interface AnalysisResult {
   steps: { kind: string; status: string }[];
 }
 export interface ReviewNoteInput { id: string; title: string; body: string; quote: string; trackTitle: string; artist: string; createdAt: string }
+export type MoodTone = -1 | 0 | 1;
+export interface ReviewMood { noteId: string; mood: string; tone: MoodTone }
 export interface ReviewResult {
   overview: string;
   themes: { title: string; body: string; noteIds: string[] }[];
+  moods: ReviewMood[];
   question: string;
   noteCount: number;
   warnings: string[];
+}
+export type ReviewRangeId = '7' | '30' | '90' | 'all';
+export interface ReviewRecord {
+  id: string;
+  createdAt: string;
+  rangeId: ReviewRangeId;
+  rangeLabel: string;
+  focus: string;
+  data: ReviewResult;
+  refs: Record<string, { createdAt: string; trackTitle: string }>;
 }
 export interface AskInput {
   track: { title: string; artist: string };

@@ -237,3 +237,41 @@ h1 { margin: 10px 0 0; font-weight: 300; font-size: clamp(25px, 3vw, 39px); lett
 .ask-card > div button { background: none; color: #a99572; font-size: 9px; display: inline-flex; align-items: center; gap: 5px; padding: 2px 0; }
 .ask-card > div button:hover:not(:disabled) { color: #dccdb4; }
 .ask-prompt small { color: #dc9eaa; font-size: 9px; }
+
+.embedded-nav .nav-dot { position: absolute; right: 9px; top: 9px; width: 7px; height: 7px; border-radius: 50%; background: #d9b48c; box-shadow: 0 0 8px rgba(217,180,140,.7); }
+.review-nudge { display: flex; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 18px; padding: 13px 16px; border-left: 2px solid rgba(217,180,140,.6); background: rgba(217,180,140,.05); border-radius: 0 8px 8px 0; }
+.review-nudge p { margin: 0; font-size: 11px; line-height: 1.8; color: #d6c4a5; }
+.review-nudge button { flex: none; padding: 6px 12px; border-radius: 999px; font-size: 10px; background: transparent; border: 1px solid rgba(217,180,140,.4); color: #d6c4a5; }
+.review-consent { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.review-controls .review-consent input { width: auto; padding: 0; margin-top: 3px; accent-color: #a9d3bd; }
+.review-consent b { display: block; font-size: 12px; font-weight: 500; color: #c8d9ce; }
+.review-consent small { display: block; margin-top: 4px; font-size: 10px; line-height: 1.8; color: #6f867b; }
+.review-run:disabled { opacity: .45; cursor: not-allowed; }
+.review-moods h3 { margin: 0 0 10px; font-size: 13px; font-weight: 500; color: #bbdfce; }
+.review-moods ol { list-style: none; margin: 0 0 8px; padding: 0; display: flex; gap: 8px; flex-wrap: wrap; }
+.review-mood { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; font-size: 11px; border: 1px solid var(--line); background: transparent; }
+.review-mood time { font-size: 9px; opacity: .65; }
+.review-mood.tone-down { color: #9fb4d6; border-color: rgba(137,166,214,.35); background: rgba(137,166,214,.07); }
+.review-mood.tone-mid { color: #b6c3bb; border-color: rgba(176,213,194,.22); background: rgba(176,213,194,.05); }
+.review-mood.tone-up { color: #dcc38f; border-color: rgba(217,180,140,.4); background: rgba(217,180,140,.07); }
+button.review-mood:hover { filter: brightness(1.2); }
+.review-gone { padding: 5px 10px; border-radius: 999px; font-size: 9px; color: #5f7468; border: 1px dashed var(--line); opacity: .75; cursor: default; }
+.review-history { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 14px; }
+.review-history summary { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 11px; color: #8aa095; }
+.review-history ul { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.review-history li { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 8px; }
+.review-history li.current { border-color: rgba(169,211,189,.45); background: rgba(169,211,189,.05); }
+.review-history-open { flex: 1; min-width: 0; display: grid; gap: 3px; padding: 10px 14px; text-align: left; background: transparent; }
+.review-history-open b { font-size: 11px; font-weight: 400; color: #bcd0c4; }
+.review-history-open span { font-size: 10px; color: #7b9286; }
+.review-history-open small { font-size: 10px; color: #5f7468; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-history-delete { flex: none; padding: 0 14px; background: transparent; color: #6f867b; }
+.review-history-delete:hover { color: #dc9eaa; }
+.review-history-clear { margin-top: 10px; padding: 4px 0; background: none; font-size: 10px; color: #6f867b; }
+.review-history-clear:hover { color: #dc9eaa; }
+.track-memory { max-width: 750px; margin: -14px 0 34px; display: grid; gap: 8px; }
+.track-memory .rail-label { font-size: 9px; letter-spacing: 1px; color: #c9b08c; }
+.track-memory button { display: grid; gap: 4px; padding: 12px 16px; text-align: left; border-left: 2px solid rgba(217,180,140,.5); background: rgba(217,180,140,.04); border-radius: 0 8px 8px 0; }
+.track-memory button:hover { background: rgba(217,180,140,.09); }
+.track-memory button small { font-size: 9px; color: #a99572; }
+.track-memory button span { font-size: 12px; line-height: 1.8; color: #d6c8ad; font-family: 'Songti SC', SimSun, Georgia, serif; }

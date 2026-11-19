@@ -42292,10 +42292,15 @@ var SYSTEM_PROMPT3 = [
   "3. \u5982\u679C\u7B14\u8BB0\u592A\u5C11\u6216\u592A\u96F6\u6563\uFF0C\u5982\u5B9E\u8BF4\u660E\u201C\u76EE\u524D\u80FD\u770B\u51FA\u7684\u6709\u9650\u201D\uFF0C\u4E0D\u8981\u786C\u51D1\u4E3B\u9898\u3002",
   "4. \u53EF\u4EE5\u6307\u51FA\u53CD\u590D\u51FA\u73B0\u7684\u60C5\u7EEA\u3001\u6B4C\u66F2\u3001\u6B4C\u8BCD\u53E5\u5B50\u3001\u65F6\u95F4\u89C4\u5F8B\uFF0C\u4F46\u8981\u8868\u8FF0\u4E3A\u201C\u770B\u8D77\u6765\u201D\u201C\u4F3C\u4E4E\u201D\uFF0C\u4E0D\u4E0B\u5B9A\u8BBA\u3002",
   "5. \u5982\u679C\u7B14\u8BB0\u4E2D\u51FA\u73B0\u660E\u663E\u7684\u81EA\u4F24\u6216\u7EDD\u671B\u8FF9\u8C61\uFF0C\u7528\u5173\u5FC3\u7684\u53E3\u543B\u5EFA\u8BAE\u4ED6\u8054\u7CFB\u8EAB\u8FB9\u53EF\u4FE1\u4EFB\u7684\u4EBA\u6216\u5F53\u5730\u7684\u5371\u673A\u63F4\u52A9\u6E20\u9053\uFF0C\u4E0D\u8981\u56DE\u907F\u3002",
+  "6. moods \u53EA\u8BB0\u5F55\u7B14\u8BB0\u91CC\u660E\u786E\u5199\u51FA\u6216\u660E\u663E\u6D41\u9732\u7684\u60C5\u7EEA\uFF1A\u6BCF\u6761\u7B14\u8BB0\u6700\u591A\u4E00\u6761\uFF0C\u4E0D\u786E\u5B9A\u5C31\u4E0D\u5217\uFF0C\u6700\u591A 20 \u6761\uFF1Bmood \u662F 6 \u5B57\u4EE5\u5185\u7684\u60C5\u7EEA\u8BCD\uFF1Btone \u53D6 -1\uFF08\u4F4E\u843D\u3001\u6C89\u91CD\uFF09\u30010\uFF08\u5E73\u9759\u3001\u590D\u6742\uFF09\u6216 1\uFF08\u8F7B\u5FEB\u3001\u6E29\u6696\uFF09\u3002",
   "\u53EA\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF0C\u7ED3\u6784\u5982\u4E0B\uFF1A",
-  '{"overview":"2-4 \u53E5\u6574\u4F53\u56DE\u987E","themes":[{"title":"\u4E3B\u9898\u540D\uFF0C12 \u5B57\u4EE5\u5185","body":"2-3 \u53E5\uFF0C\u8BF4\u660E\u4F60\u770B\u5230\u4E86\u4EC0\u4E48","noteIds":["N1"]}],"question":"\u4E00\u4E2A\u503C\u5F97\u4ED6\u63A5\u7740\u60F3\u7684\u95EE\u9898\uFF0C1 \u53E5"}',
+  '{"overview":"2-4 \u53E5\u6574\u4F53\u56DE\u987E","themes":[{"title":"\u4E3B\u9898\u540D\uFF0C12 \u5B57\u4EE5\u5185","body":"2-3 \u53E5\uFF0C\u8BF4\u660E\u4F60\u770B\u5230\u4E86\u4EC0\u4E48","noteIds":["N1"]}],"moods":[{"noteId":"N1","mood":"\u60F3\u5FF5","tone":-1}],"question":"\u4E00\u4E2A\u503C\u5F97\u4ED6\u63A5\u7740\u60F3\u7684\u95EE\u9898\uFF0C1 \u53E5"}',
   "themes \u7ED9 2 \u5230 4 \u4E2A\u3002"
 ].join("\n");
+function readTone(value) {
+  const tone = Number(value);
+  return tone < 0 ? -1 : tone > 0 ? 1 : 0;
+}
 var ReviewUnavailableError = class extends Error {
 };
 async function runReview(input, client = new DeepSeekClient()) {
@@ -42337,11 +42342,23 @@ ${lines.join("\n\n---\n\n")}`;
     }
     themes.push({ title, body, noteIds: refs.slice(0, 12) });
   }
+  const moods = [];
+  const moodSeen = /* @__PURE__ */ new Set();
+  for (const item of Array.isArray(raw.moods) ? raw.moods : []) {
+    if (!item || typeof item !== "object") continue;
+    const entry = item;
+    const noteId = labelToId.get(String(entry.noteId ?? "").trim().toUpperCase());
+    const mood = typeof entry.mood === "string" ? entry.mood.trim().slice(0, 12) : "";
+    if (!noteId || !mood || moodSeen.has(noteId)) continue;
+    moodSeen.add(noteId);
+    moods.push({ noteId, mood, tone: readTone(entry.tone) });
+  }
   const overview = typeof raw.overview === "string" ? raw.overview.trim().slice(0, 1200) : "";
   if (!overview && !themes.length) throw new Error("REVIEW_EMPTY");
   return {
     overview,
     themes: themes.slice(0, 4),
+    moods: moods.slice(0, 20),
     question: typeof raw.question === "string" ? raw.question.trim().slice(0, 300) : "",
     noteCount: notes.length,
     warnings: dropped.length ? [`\u5DF2\u4E22\u5F03 ${dropped.length} \u4E2A\u65E0\u6CD5\u5BF9\u5E94\u5230\u4F60\u7B14\u8BB0\u7684\u4E3B\u9898\u3002`] : []

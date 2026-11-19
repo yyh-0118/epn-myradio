@@ -6,6 +6,7 @@ import { AnalysisPanel } from '../components/AnalysisPanel';
 import { ReviewPanel } from '../components/ReviewPanel';
 import { AskPrompt } from '../components/AskPrompt';
 import { formatTime } from '../lib/lyrics';
+import { describeAgo, earlierNotesForTrack, readConsent, readReviewHistory, reviewNudge } from '../lib/review-store';
 import type { AskInput, Moment, Track } from '../types';
 import { MineradioBridge } from './bridge-client';
 import type { BackupInfo, HostCapture, HostSnapshot, ImportPreview, RecoveryInfo } from './contract';
@@ -170,7 +171,7 @@ export default function EmbeddedApp() {
     const lines = host?.track?.id === moment.trackId ? host.lyrics : [];
     const index = lines.findIndex((line) => line.id === moment.lineId);
     const context = index >= 0 ? lines.slice(Math.max(0, index - 2), index + 3).map((line) => line.text.trim()).filter(Boolean) : [];
-    const earlier = momentsRef.current
+    const earlier = !readConsent() ? [] : momentsRef.current
       .filter((item) => item.id !== moment.id && item.trackId === moment.trackId && item.body.trim())
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3)
       .map((item) => ({ body: item.body.trim().slice(0, 400), createdAt: item.createdAt }));
@@ -310,6 +311,8 @@ export default function EmbeddedApp() {
     lyrics: snapshot.lyrics,
     lyricSource: snapshot.lyrics.some((line) => line.words?.length) ? 'yrc' : snapshot.lyrics.some((line) => line.t !== null) ? 'lrc' : snapshot.lyrics.length ? 'text' : 'none',
   } : undefined;
+  const reviewDue = useMemo(() => reviewNudge(moments, readReviewHistory()).due, [moments, tab]);
+  const trackMemory = useMemo(() => snapshot?.track ? earlierNotesForTrack(moments, snapshot.track.id) : null, [moments, snapshot?.track?.id]);
 
   return <div className="embedded-shell">
     <header className="embedded-topbar">
@@ -320,7 +323,7 @@ export default function EmbeddedApp() {
     <aside className="embedded-nav">
       <button className={tab === 'write' ? 'active' : ''} onClick={() => void navigate('write')}><Feather size={18} /><span>写下</span></button>
       <button className={tab === 'library' ? 'active' : ''} onClick={() => void navigate('library')}><Library size={18} /><span>瞬间</span><b>{moments.length}</b></button>
-      <button className={tab === 'review' ? 'active' : ''} onClick={() => void navigate('review')}><BookMarked size={18} /><span>回顾</span></button>
+      <button className={tab === 'review' ? 'active' : ''} onClick={() => void navigate('review')}><BookMarked size={18} /><span>回顾</span>{reviewDue && tab !== 'review' && <i className="nav-dot" role="img" aria-label="有新的回顾可以读" title="最近写了不少笔记，可以回顾一下" />}</button>
       <button className={tab === 'analysis' ? 'active' : ''} onClick={() => void navigate('analysis')}><Sparkles size={18} /><span>分析</span></button>
     </aside>
     <main className="embedded-main">
@@ -340,6 +343,7 @@ export default function EmbeddedApp() {
       </section> : <section className="capture-home">
         <span className="section-kicker">A MOMENT FROM MINERADIO</span><h1>先把这一刻，<br />从音乐里轻轻取出来。</h1>
         <div className="live-quote"><div><span className={`pulse ${snapshot?.playback.playing ? 'playing' : ''}`} /><span>{snapshot?.track ? `${snapshot.track.title} · ${formatTime(snapshot.playback.time)}` : '还没有正在播放的歌曲'}</span></div><blockquote>{currentLine?.text || '播放一首歌。被打动时，不必等到想好怎么写。'}</blockquote><button disabled={!snapshot?.track} onClick={() => requestCapture(currentLine?.id)}><BookOpen size={17} />记录当前这一句</button></div>
+        {trackMemory && trackMemory.notes.length > 0 && <div className="track-memory" role="status"><span className="rail-label">你在这首歌里写过 · 共 {trackMemory.total} 条</span>{trackMemory.notes.map((note) => <button key={note.id} onClick={() => void navigate('write', note.id)}><small>{describeAgo(note.createdAt)} · {new Date(note.createdAt).toLocaleDateString('zh-CN')}</small><span>{note.body.trim().slice(0, 80)}{note.body.trim().length > 80 ? '…' : ''}</span></button>)}</div>}
         <div className="capture-principles"><span><Clock3 size={15} /><b>音乐不中断</b><small>主播放器继续掌管声音</small></span><span><Feather size={15} /><b>先写，后分析</b><small>不让工具盖过你的感受</small></span><span><Database size={15} /><b>上下文已关联</b><small>曲目、歌词与时间一起留下</small></span></div>
       </section>)}
       {tab === 'library' && <section className="embedded-library"><div className="library-heading"><div><span className="section-kicker">YOUR ECHO ARCHIVE</span><h1>那些想留下的瞬间</h1></div><div className="library-tools"><label><Search size={15} /><input aria-label="搜索瞬间" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索歌名、歌词或自己的话" /></label>{snapshot?.capabilities.notebookArchive && <button className="archive-button" onClick={() => void openArchive()}><Archive size={15} />存档</button>}</div></div>{filtered.length ? <div className="library-grid">{filtered.map((moment) => <article key={moment.id}><button className="open-card" onClick={() => void navigate('write', moment.id)}><div><span>{formatTime(moment.at)}</span><span>{new Date(moment.createdAt).toLocaleDateString('zh-CN')}</span></div><blockquote>“{moment.quote || '一个没有歌词的瞬间'}”</blockquote><h3>{moment.title || '还没起名字的瞬间'}</h3><p>{moment.body || '这里还留着一页空白，等你回来接着写。'}</p><small>{moment.trackTitle} · {moment.artist}</small></button><button className="delete-card" aria-label={`删除 ${moment.title || '未命名瞬间'}`} onClick={() => void removeMoment(moment)}><Trash2 size={13} /></button></article>)}</div> : <div className="library-zero"><BookOpen size={31} /><h2>这里还很安静。</h2><p>回到正在播放的歌词，留下第一个瞬间。</p><button onClick={() => void navigate('write')}>回到此刻</button></div>}</section>}
