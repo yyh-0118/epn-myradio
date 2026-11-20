@@ -15039,11 +15039,11 @@ var require_util = __commonJS({
       return false;
     }
     exports.schemaHasRules = schemaHasRules;
-    function schemaHasRulesButRef(schema, RULES) {
+    function schemaHasRulesButRef(schema, RULES3) {
       if (typeof schema == "boolean")
         return !schema;
       for (const key in schema)
-        if (key !== "$ref" && RULES.all[key])
+        if (key !== "$ref" && RULES3.all[key])
           return true;
       return false;
     }
@@ -16437,17 +16437,17 @@ var require_validate = __commonJS({
     }
     function schemaKeywords(it, types, typeErrors, errsCount) {
       const { gen, schema, data, allErrors, opts, self } = it;
-      const { RULES } = self;
-      if (schema.$ref && (opts.ignoreKeywordsWithRef || !(0, util_1.schemaHasRulesButRef)(schema, RULES))) {
-        gen.block(() => keywordCode(it, "$ref", RULES.all.$ref.definition));
+      const { RULES: RULES3 } = self;
+      if (schema.$ref && (opts.ignoreKeywordsWithRef || !(0, util_1.schemaHasRulesButRef)(schema, RULES3))) {
+        gen.block(() => keywordCode(it, "$ref", RULES3.all.$ref.definition));
         return;
       }
       if (!opts.jtd)
         checkStrictTypes(it, types);
       gen.block(() => {
-        for (const group of RULES.rules)
+        for (const group of RULES3.rules)
           groupKeywords(group);
-        groupKeywords(RULES.post);
+        groupKeywords(RULES3.post);
       });
       function groupKeywords(group) {
         if (!(0, applicability_1.shouldUseGroup)(schema, group))
@@ -18602,10 +18602,10 @@ var require_core = __commonJS({
       }
       // Remove keyword
       removeKeyword(keyword) {
-        const { RULES } = this;
-        delete RULES.keywords[keyword];
-        delete RULES.all[keyword];
-        for (const group of RULES.rules) {
+        const { RULES: RULES3 } = this;
+        delete RULES3.keywords[keyword];
+        delete RULES3.all[keyword];
+        for (const group of RULES3.rules) {
           const i = group.rules.findIndex((rule) => rule.keyword === keyword);
           if (i >= 0)
             group.rules.splice(i, 1);
@@ -18773,9 +18773,9 @@ var require_core = __commonJS({
     }
     var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
     function checkKeyword(keyword, def) {
-      const { RULES } = this;
+      const { RULES: RULES3 } = this;
       (0, util_1.eachItem)(keyword, (kwd) => {
-        if (RULES.keywords[kwd])
+        if (RULES3.keywords[kwd])
           throw new Error(`Keyword ${kwd} is already defined`);
         if (!KEYWORD_NAME.test(kwd))
           throw new Error(`Keyword ${kwd} has invalid name`);
@@ -18791,13 +18791,13 @@ var require_core = __commonJS({
       const post = definition === null || definition === void 0 ? void 0 : definition.post;
       if (dataType && post)
         throw new Error('keyword with "post" flag cannot have "type"');
-      const { RULES } = this;
-      let ruleGroup = post ? RULES.post : RULES.rules.find(({ type: t }) => t === dataType);
+      const { RULES: RULES3 } = this;
+      let ruleGroup = post ? RULES3.post : RULES3.rules.find(({ type: t }) => t === dataType);
       if (!ruleGroup) {
         ruleGroup = { type: dataType, rules: [] };
-        RULES.rules.push(ruleGroup);
+        RULES3.rules.push(ruleGroup);
       }
-      RULES.keywords[keyword] = true;
+      RULES3.keywords[keyword] = true;
       if (!definition)
         return;
       const rule = {
@@ -18812,7 +18812,7 @@ var require_core = __commonJS({
         addBeforeRule.call(this, ruleGroup, rule, definition.before);
       else
         ruleGroup.rules.push(rule);
-      RULES.all[keyword] = rule;
+      RULES3.all[keyword] = rule;
       (_a = definition.implements) === null || _a === void 0 ? void 0 : _a.forEach((kwd) => this.addKeyword(kwd));
     }
     function addBeforeRule(ruleGroup, rule, before) {
@@ -28787,11 +28787,11 @@ var require_clean = __commonJS({
   "workbench/node_modules/semver/functions/clean.js"(exports, module) {
     "use strict";
     var parse = require_parse2();
-    var clean = (version, options) => {
+    var clean2 = (version, options) => {
       const s = parse(version.trim().replace(/^[=v]+/, ""), options);
       return s ? s.version : null;
     };
-    module.exports = clean;
+    module.exports = clean2;
   }
 });
 
@@ -30188,7 +30188,7 @@ var require_semver2 = __commonJS({
     var identifiers = require_identifiers();
     var parse = require_parse2();
     var valid = require_valid();
-    var clean = require_clean();
+    var clean2 = require_clean();
     var inc = require_inc();
     var diff = require_diff();
     var major = require_major();
@@ -30227,7 +30227,7 @@ var require_semver2 = __commonJS({
     module.exports = {
       parse,
       valid,
-      clean,
+      clean: clean2,
       inc,
       diff,
       major,
@@ -39141,6 +39141,67 @@ var DeepSeekClient = class {
   get isConfigured() {
     return Boolean(serverEnv.llmApiUrl && serverEnv.llmModel);
   }
+  /**
+   * 流式对话：只要上游持续有分片就不会超时，idleTimeoutMs 内没有任何分片才判定失败。
+   * 推理模型的思考阶段通过 onThinking 通知，正文通过 onContent 逐段回调。
+   */
+  async streamChat(input) {
+    const idleMs = input.idleTimeoutMs ?? 6e4;
+    const idle = new AbortController();
+    let timer;
+    const arm = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => idle.abort(new Error("LLM \u957F\u65F6\u95F4\u6CA1\u6709\u8FD4\u56DE\u5185\u5BB9\uFF0C\u5DF2\u4E2D\u6B62\u3002")), idleMs);
+    };
+    const signal = input.signal ? AbortSignal.any([input.signal, idle.signal]) : idle.signal;
+    arm();
+    let finishReason = null;
+    try {
+      const response = await this.postRawCompletion({
+        messages: input.messages,
+        signal,
+        stream: true,
+        temperature: input.temperature,
+        maxTokens: input.maxTokens,
+        noTimeout: true,
+        disableThinking: input.disableThinking
+      });
+      if (!response.body) throw new Error("LLM stream response body is empty.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let thinking = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        arm();
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const chunk = parseStreamChunk(line);
+          if (chunk === "done") return { finishReason };
+          if (!chunk) continue;
+          const choice = chunk.choices?.[0];
+          if (choice?.finish_reason) finishReason = choice.finish_reason;
+          if (choice?.delta?.reasoning_content && !thinking) {
+            thinking = true;
+            input.onThinking?.();
+          }
+          const content = choice?.delta?.content;
+          if (content) input.onContent(content);
+        }
+      }
+      return { finishReason };
+    } catch (error) {
+      if (idle.signal.aborted && !input.signal?.aborted) {
+        throw idle.signal.reason instanceof Error ? idle.signal.reason : new Error("LLM \u957F\u65F6\u95F4\u6CA1\u6709\u8FD4\u56DE\u5185\u5BB9\uFF0C\u5DF2\u4E2D\u6B62\u3002");
+      }
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
   async completeJson(input) {
     const response = await this.postCompletion({
       messages: input.messages,
@@ -39148,6 +39209,7 @@ var DeepSeekClient = class {
       stream: false,
       temperature: input.temperature,
       maxTokens: input.maxTokens,
+      disableThinking: input.disableThinking,
       responseFormat: {
         type: "json_object"
       }
@@ -39210,6 +39272,7 @@ var DeepSeekClient = class {
     if (serverEnv.llmApiKey) {
       headers.Authorization = `Bearer ${serverEnv.llmApiKey}`;
     }
+    const signal = input.noTimeout ? input.signal : input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(45e3)]) : AbortSignal.timeout(45e3);
     const response = await fetch(serverEnv.llmApiUrl, {
       method: "POST",
       headers,
@@ -39219,9 +39282,10 @@ var DeepSeekClient = class {
         stream: input.stream,
         temperature: input.temperature ?? serverEnv.llmTemperature,
         max_tokens: input.maxTokens ?? serverEnv.llmMaxTokens,
-        ...input.responseFormat ? { response_format: input.responseFormat } : {}
+        ...input.responseFormat ? { response_format: input.responseFormat } : {},
+        ...input.disableThinking && isDeepSeekHost(serverEnv.llmApiUrl) ? { thinking: { type: "disabled" } } : {}
       }),
-      signal: input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(45e3)]) : AbortSignal.timeout(45e3)
+      signal
     });
     if (!response.ok) {
       const errorMessage = await readLlmErrorMessage(response);
@@ -39235,6 +39299,25 @@ var DeepSeekClient = class {
     }
   }
 };
+function isDeepSeekHost(url) {
+  try {
+    return new URL(url).hostname.endsWith("deepseek.com");
+  } catch {
+    return false;
+  }
+}
+function parseStreamChunk(line) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("data:")) return null;
+  const data = trimmed.slice(5).trim();
+  if (!data) return null;
+  if (data === "[DONE]") return "done";
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
 function parseStreamLine(line) {
   const trimmedLine = line.trim();
   if (!trimmedLine.startsWith("data:")) {
@@ -41218,7 +41301,8 @@ var AnalysisService = class {
           rhymeCandidateScan
         ),
         temperature: serverEnv.llmTemperature,
-        maxTokens: serverEnv.llmMaxTokens
+        maxTokens: serverEnv.llmMaxTokens,
+        disableThinking: true
       });
       diagnostics.push({
         id: createId3("diagnostic"),
@@ -41804,7 +41888,9 @@ Rules:
 11. Do not invent lines that are not present in the source lyrics.
 12. If the final rhymeAnalysis only contains end-position units, add a warning explaining that middle/internal rhymes were not confidently found.
 13. If you reject or correct a supplied candidate, keep the final rhymeAnalysis clean and record the reason in rhymeAdjudication.decisions.
-14. Return JSON only.
+14. For each entry in lines, "emotion" is a short Chinese mood word (at most 6 characters). "note" is a one-sentence Chinese reading of what the line says or implies (at most 30 characters), based only on the lyric text; it is NOT a rhyme note. Write a note only for lines with clear imagery, a turn, or a key idea, at most 12 lines in total, and leave note empty for all other lines. Do not invent the singer's biography or the story behind the song.
+15. insights.evidenceLineIndexes must be zero-based indexes of lines that actually support the insight, at most 4 per insight.
+16. Return JSON only.
 
 Input JSON:
 ${JSON.stringify(inputPayload, null, 2)}`
@@ -42203,23 +42289,60 @@ function createId3(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// workbench/server/analysis-view.ts
+var LINE_NOTE_MAX = 80;
+var LINE_EMOTION_MAX = 12;
+function clean(text, max) {
+  return typeof text === "string" ? text.replace(/\s+/g, " ").trim().slice(0, max) : "";
+}
+function evidenceToLineIndexes(ids, lineCount) {
+  const out = /* @__PURE__ */ new Set();
+  for (const id of Array.isArray(ids) ? ids : []) {
+    const match = typeof id === "string" ? /^line-(\d{1,5})$/.exec(id) : null;
+    const index = match ? Number(match[1]) - 1 : -1;
+    if (index >= 0 && index < lineCount) out.add(index);
+  }
+  return [...out].sort((a, b) => a - b).slice(0, 12);
+}
+function toBarViews(bars, withModelText) {
+  return bars.map((bar) => {
+    const view = { energy: bar.energy ?? 0, tension: bar.tension ?? 0 };
+    if (withModelText) {
+      const emotion = clean(bar.emotion, LINE_EMOTION_MAX);
+      const note = clean(bar.annotations?.[0], LINE_NOTE_MAX);
+      if (emotion) view.emotion = emotion;
+      if (note) view.note = note;
+    }
+    return view;
+  });
+}
+function toInsightViews(insights, lineCount) {
+  return insights.map((insight) => {
+    const evidence = evidenceToLineIndexes(insight.evidenceIds, lineCount);
+    return evidence.length ? { title: insight.title, body: insight.body, evidence } : { title: insight.title, body: insight.body };
+  });
+}
+
 // workbench/server/ask.ts
 var AskUnavailableError = class extends Error {
 };
-var SYSTEM_PROMPT = [
+var ASK_MAX_CHARS = 40;
+var RULES = [
   "\u4F60\u662F\u7528\u6237\u7684\u4E00\u4F4D\u8001\u670B\u53CB\u3002\u4ED6\u5728\u542C\u6B4C\u65F6\u88AB\u67D0\u4E00\u523B\u6253\u52A8\uFF0C\u6B63\u51C6\u5907\u5199\u51E0\u53E5\u968F\u7B14\uFF0C\u4F60\u8981\u95EE\u4ED6\u4E00\u4E2A\u95EE\u9898\uFF0C\u5E2E\u4ED6\u5F00\u53E3\u3002",
   "\u8981\u6C42\uFF1A",
-  "1. \u53EA\u95EE\u4E00\u4E2A\u95EE\u9898\uFF0C\u4E00\u53E5\u8BDD\uFF0C\u4E0D\u8D85\u8FC7 40 \u4E2A\u5B57\uFF0C\u7528\u53E3\u8BED\u3002",
+  `1. \u53EA\u95EE\u4E00\u4E2A\u95EE\u9898\uFF0C\u4E00\u53E5\u8BDD\uFF0C\u4E0D\u8D85\u8FC7 ${ASK_MAX_CHARS} \u4E2A\u5B57\uFF0C\u7528\u53E3\u8BED\u3002`,
   "2. \u95EE\u4ED6\u7684\u611F\u53D7\u3001\u60F3\u8D77\u7684\u4EBA\u6216\u4E8B\u3001\u6B64\u523B\u7684\u5904\u5883\uFF0C\u800C\u4E0D\u662F\u5206\u6790\u6B4C\u8BCD\u7684\u4FEE\u8F9E\u6216\u97F5\u811A\u3002",
   "3. \u4E0D\u6697\u793A\u7B54\u6848\uFF0C\u4E0D\u66FF\u4ED6\u4E0B\u7ED3\u8BBA\uFF0C\u4E0D\u7ED9\u5EFA\u8BAE\uFF0C\u4E0D\u8BF4\u6559\uFF0C\u4E0D\u7528\u201C\u8BF7\u95EE\u201D\u201C\u60A8\u201D\u4E4B\u7C7B\u7684\u5BA2\u5957\u3002",
   "4. \u5982\u679C\u4ED6\u5DF2\u7ECF\u5199\u4E86\u8349\u7A3F\uFF0C\u5C31\u987A\u7740\u8349\u7A3F\u91CC\u6700\u6709\u5206\u91CF\u7684\u4E00\u5904\u5F80\u4E0B\u95EE\uFF0C\u4E0D\u8981\u91CD\u590D\u4ED6\u5DF2\u7ECF\u5199\u51FA\u6765\u7684\u5185\u5BB9\u3002",
   "5. \u5982\u679C\u4ED6\u4EE5\u524D\u5728\u8FD9\u9996\u6B4C\u4E0B\u5199\u8FC7\u7B14\u8BB0\uFF0C\u53EF\u4EE5\u81EA\u7136\u5730\u547C\u5E94\uFF0C\u4F46\u53EA\u80FD\u5F15\u7528\u7ED9\u51FA\u7684\u5185\u5BB9\uFF0C\u4E0D\u7F16\u9020\u7ECF\u5386\u3002",
   "6. \u6CA1\u6709\u6B4C\u8BCD\u65F6\uFF0C\u5C31\u95EE\u8FD9\u6BB5\u58F0\u97F3\u5E26\u7ED9\u4ED6\u4EC0\u4E48\u3002",
-  '\u53EA\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF1A{"question":"\u4F60\u7684\u95EE\u9898"}'
-].join("\n");
-async function runAsk(input, client = new DeepSeekClient()) {
-  if (!client.isConfigured) throw new AskUnavailableError("LLM_NOT_CONFIGURED");
+  "7. \u5982\u679C\u7ED9\u51FA\u4E86\u4ED6\u8BB0\u5F55\u65F6\u7684\u64AD\u653E\u4F4D\u7F6E\u548C\u8FD9\u53E5\u5728\u6B4C\u91CC\u7684\u4F4D\u7F6E\uFF0C\u53EF\u4EE5\u8BA9\u95EE\u9898\u8D34\u8FD1\u90A3\u4E00\u523B\uFF0C\u4F46\u4E0D\u8981\u62A5\u65F6\u95F4\u6570\u5B57\u3002"
+];
+var SYSTEM_PROMPT = [...RULES, '\u53EA\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF1A{"question":"\u4F60\u7684\u95EE\u9898"}'].join("\n");
+var STREAM_SYSTEM_PROMPT = [...RULES, "\u76F4\u63A5\u8F93\u51FA\u8FD9\u4E00\u4E2A\u95EE\u9898\uFF0C\u4E0D\u8981\u5F15\u53F7\u3001\u4E0D\u8981\u524D\u7F00\u3001\u4E0D\u8981\u89E3\u91CA\u3001\u4E0D\u8981\u6362\u884C\u3002"].join("\n");
+function buildAskPrompt(input) {
   const parts = [`\u6B4C\u66F2\uFF1A\u300A${input.track.title || "\u672A\u77E5\u66F2\u76EE"}\u300B${input.track.artist ? ` - ${input.track.artist}` : ""}`];
+  if (input.position?.section) parts.push(`\u4ED6\u8BB0\u5F55\u7684\u8FD9\u4E00\u523B\uFF0C\u5728\u6B4C\u91CC\u5927\u6982\u5904\u4E8E\uFF1A${input.position.section}${typeof input.position.seconds === "number" ? `\uFF08\u64AD\u653E\u5230\u7B2C ${Math.floor(input.position.seconds / 60)} \u5206 ${Math.floor(input.position.seconds % 60)} \u79D2\uFF09` : ""}`);
   if (input.quote) parts.push(`\u4ED6\u88AB\u6253\u52A8\u7684\u8FD9\u4E00\u53E5\uFF1A${input.quote}`);
   if (input.context?.length) parts.push(`\u524D\u540E\u7684\u6B4C\u8BCD\uFF1A
 ${input.context.join("\n")}`);
@@ -42227,24 +42350,191 @@ ${input.context.join("\n")}`);
 ${input.earlier.map((note, index) => `${index + 1}. [${note.createdAt.slice(0, 10)}] ${note.body}`).join("\n")}`);
   parts.push(input.draft?.trim() ? `\u4ED6\u73B0\u5728\u5199\u7684\u8349\u7A3F\uFF1A
 ${input.draft.trim()}` : "\u4ED6\u8FD8\u6CA1\u6709\u5F00\u59CB\u5199\u3002");
+  return parts.join("\n\n");
+}
+function cleanQuestion(text) {
+  const one = text.trim().replace(/^["“「『]+|["”」』]+$/g, "").replace(/^(问|问题)[：:]\s*/, "").split(/\n+/)[0].trim();
+  return one.length > ASK_MAX_CHARS ? `${one.slice(0, ASK_MAX_CHARS - 1).replace(/[，,、；;\s]+$/, "")}\u2026` : one;
+}
+async function runAsk(input, client = new DeepSeekClient()) {
+  if (!client.isConfigured) throw new AskUnavailableError("LLM_NOT_CONFIGURED");
   const raw = await client.completeJson({
-    messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: parts.join("\n\n") }],
+    messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: buildAskPrompt(input) }],
     temperature: 0.8,
     maxTokens: 4e3
   });
-  const question = typeof raw.question === "string" ? raw.question.trim().replace(/^["“「]+|["”」]+$/g, "").slice(0, 120) : "";
+  const question = typeof raw.question === "string" ? cleanQuestion(raw.question) : "";
   if (!question) throw new Error("ASK_EMPTY");
   return { question };
+}
+async function streamAsk(input, handlers, client = new DeepSeekClient(), signal) {
+  if (!client.isConfigured) throw new AskUnavailableError("LLM_NOT_CONFIGURED");
+  let raw = "";
+  let shown = 0;
+  await client.streamChat({
+    messages: [{ role: "system", content: STREAM_SYSTEM_PROMPT }, { role: "user", content: buildAskPrompt(input) }],
+    signal,
+    temperature: 0.8,
+    maxTokens: 1e3,
+    onThinking: handlers.onThinking,
+    onContent: (chunk) => {
+      raw += chunk;
+      const visible = raw.replace(/^[\s"“「『]+/, "").replace(/^(问|问题)[：:]\s*/, "").split(/\n/)[0].slice(0, ASK_MAX_CHARS);
+      if (visible.length > shown) {
+        handlers.onText(visible.slice(shown));
+        shown = visible.length;
+      }
+    }
+  });
+  const question = cleanQuestion(raw);
+  if (!question) throw new Error("ASK_EMPTY");
+  return { question };
+}
+
+// workbench/src/lib/writing.ts
+var ASK_LINE = /^[ \t]*(?:>|问[：:]).*$/gm;
+function stripAskLines(text) {
+  return text.replace(ASK_LINE, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// workbench/server/polish.ts
+var PolishUnavailableError = class extends Error {
+};
+var POLISH_MIN_CHARS = 20;
+var POLISH_MAX_CHARS = 3e3;
+var SYSTEM_PROMPT2 = [
+  "\u4F60\u662F\u4E00\u4F4D\u514B\u5236\u7684\u6587\u5B57\u6574\u7406\u8005\uFF0C\u5E2E\u7528\u6237\u628A\u542C\u6B4C\u65F6\u968F\u624B\u5199\u4E0B\u7684\u96F6\u6563\u7B14\u8BB0\uFF0C\u6574\u7406\u6210\u4E00\u6BB5\u901A\u987A\u7684\u6587\u5B57\u3002",
+  "\u4E25\u683C\u89C4\u5219\uFF1A",
+  "1. \u53EA\u6574\u7406\uFF0C\u4E0D\u521B\u4F5C\uFF1A\u4FDD\u7559\u4ED6\u539F\u6709\u7684\u610F\u601D\u3001\u4E8B\u5B9E\u3001\u4EBA\u7269\u3001\u60C5\u7EEA\u548C\u5148\u540E\u987A\u5E8F\uFF0C\u4E0D\u6DFB\u52A0\u4ED6\u6CA1\u5199\u8FC7\u7684\u7ECF\u5386\u3001\u7EC6\u8282\u3001\u6BD4\u55BB\u6216\u611F\u609F\u3002",
+  "2. \u4FDD\u7559\u4ED6\u7684\u53E3\u543B\u548C\u7528\u8BCD\u4E60\u60EF\uFF0C\u7528\u7B2C\u4E00\u4EBA\u79F0\uFF0C\u4E0D\u8981\u5199\u5F97\u6BD4\u4ED6\u539F\u6765\u66F4\u6587\u827A\u3001\u66F4\u717D\u60C5\uFF0C\u4E0D\u8981\u5347\u534E\uFF0C\u4E0D\u8981\u603B\u7ED3\uFF0C\u4E0D\u8981\u8BF4\u6559\u3002",
+  "3. \u53EA\u505A\u8FD9\u4E9B\u4E8B\uFF1A\u7406\u987A\u8BED\u5E8F\u3001\u8865\u5168\u7701\u7565\u7684\u4E3B\u8BED\u3001\u8FDE\u63A5\u96F6\u6563\u7684\u53E5\u5B50\u3001\u6539\u6389\u660E\u663E\u7684\u9519\u522B\u5B57\u548C\u91CD\u590D\u3002",
+  "4. \u4ED6\u539F\u6587\u91CC\u4EE5\u300C>\u300D\u6216\u300C\u95EE\uFF1A\u300D\u5F00\u5934\u7684\u884C\u662F AI \u4E4B\u524D\u63D0\u7684\u95EE\u9898\uFF0C\u4E0D\u662F\u4ED6\u5199\u7684\u8BDD\uFF0C\u6574\u7406\u65F6\u76F4\u63A5\u4E22\u6389\uFF0C\u4E0D\u8981\u6539\u5199\u8FDB\u6B63\u6587\u3002",
+  "5. \u7BC7\u5E45\u4E0E\u539F\u6587\u76F8\u5F53\uFF0C\u53EF\u4EE5\u7565\u77ED\uFF0C\u4E0D\u8981\u660E\u663E\u53D8\u957F\u3002",
+  "6. \u76F4\u63A5\u8F93\u51FA\u6574\u7406\u540E\u7684\u90A3\u4E00\u6BB5\u6587\u5B57\uFF0C\u4E0D\u8981\u5F15\u53F7\u3001\u4E0D\u8981\u6807\u9898\u3001\u4E0D\u8981\u524D\u540E\u8BF4\u660E\u3001\u4E0D\u8981 Markdown\u3002"
+].join("\n");
+function buildPolishPrompt(input) {
+  const parts = [`\u6B4C\u66F2\uFF1A\u300A${input.track.title || "\u672A\u77E5\u66F2\u76EE"}\u300B${input.track.artist ? ` - ${input.track.artist}` : ""}`];
+  if (input.quote) parts.push(`\u4ED6\u88AB\u6253\u52A8\u7684\u6B4C\u8BCD\uFF1A${input.quote}`);
+  parts.push(`\u4ED6\u7684\u539F\u6587\uFF1A
+${input.draft.trim()}`);
+  return parts.join("\n\n");
+}
+function cleanPolished(text) {
+  return text.trim().replace(/^```[a-z]*\s*/i, "").replace(/\s*```$/i, "").replace(/^(整理后|整理如下|以下是整理后的[^：:\n]*)[：:]\s*/, "").replace(/^["“「『]+|["”」』]+$/g, "").trim();
+}
+function polishWarnings(original, polished) {
+  const warnings = [];
+  const base = stripAskLines(original).replace(/\s+/g, "").length;
+  const next = polished.replace(/\s+/g, "").length;
+  if (base > 0 && next > base * 1.4 + 10) warnings.push("\u6574\u7406\u540E\u7684\u6587\u5B57\u6BD4\u539F\u6587\u957F\u4E86\u4E0D\u5C11\uFF0C\u53EF\u80FD\u52A0\u5165\u4E86\u4F60\u6CA1\u5199\u8FC7\u7684\u5185\u5BB9\uFF0C\u91C7\u7528\u524D\u8BF7\u5BF9\u7167\u539F\u6587\u3002");
+  return warnings;
+}
+function assertPolishable(draft) {
+  const body = stripAskLines(draft);
+  if (body.length < POLISH_MIN_CHARS) throw new Error("POLISH_TOO_SHORT");
+}
+async function streamPolish(input, handlers, client = new DeepSeekClient(), signal) {
+  if (!client.isConfigured) throw new PolishUnavailableError("LLM_NOT_CONFIGURED");
+  assertPolishable(input.draft);
+  let raw = "";
+  let shown = 0;
+  const { finishReason } = await client.streamChat({
+    messages: [{ role: "system", content: SYSTEM_PROMPT2 }, { role: "user", content: buildPolishPrompt(input) }],
+    signal,
+    temperature: 0.3,
+    maxTokens: 4e3,
+    onThinking: handlers.onThinking,
+    onContent: (chunk) => {
+      raw += chunk;
+      const visible = raw.replace(/^[\s"“「『]+/, "");
+      if (visible.length > shown) {
+        handlers.onText(visible.slice(shown));
+        shown = visible.length;
+      }
+    }
+  });
+  const text = cleanPolished(raw);
+  if (!text) throw new Error("POLISH_EMPTY");
+  const warnings = polishWarnings(input.draft, text);
+  if (finishReason === "length") warnings.push("\u8F93\u51FA\u88AB\u622A\u65AD\uFF0C\u6574\u7406\u7684\u6587\u5B57\u53EF\u80FD\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u5BF9\u7167\u539F\u6587\u518D\u51B3\u5B9A\u662F\u5426\u91C7\u7528\u3002");
+  return { text, warnings };
+}
+
+// workbench/server/stream.ts
+var DATA_DELIMITER = "===DATA===";
+function createProseSplitter(onText) {
+  let full = "";
+  let emitted = 0;
+  let cut = -1;
+  let jsonMode = false;
+  return {
+    push(chunk) {
+      full += chunk;
+      if (jsonMode) return;
+      if (cut < 0 && full.trimStart().startsWith("{")) {
+        jsonMode = true;
+        return;
+      }
+      if (cut < 0) cut = full.indexOf(DATA_DELIMITER);
+      if (cut >= 0 && emitted >= cut) return;
+      const limit = cut >= 0 ? cut : Math.max(emitted, full.length - (DATA_DELIMITER.length - 1));
+      if (limit > emitted) {
+        onText(full.slice(emitted, limit));
+        emitted = limit;
+      }
+    },
+    finish() {
+      const idx = full.indexOf(DATA_DELIMITER);
+      if (idx >= 0) {
+        if (emitted < idx) {
+          onText(full.slice(emitted, idx));
+          emitted = idx;
+        }
+        return { prose: full.slice(0, idx).trim(), data: full.slice(idx + DATA_DELIMITER.length), jsonOnly: false };
+      }
+      if (jsonMode) return { prose: "", data: full, jsonOnly: true };
+      if (emitted < full.length) {
+        onText(full.slice(emitted));
+        emitted = full.length;
+      }
+      return { prose: full.trim(), data: "", jsonOnly: false };
+    }
+  };
+}
+function parseJsonLoose(text) {
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const value = JSON.parse(cleaned.slice(start, end + 1));
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+async function runProseStream(client, args, handlers) {
+  const splitter = createProseSplitter(handlers.onText);
+  const { finishReason } = await client.streamChat({
+    messages: [{ role: "system", content: args.system }, { role: "user", content: args.user }],
+    signal: args.signal,
+    temperature: args.temperature,
+    maxTokens: args.maxTokens,
+    disableThinking: args.disableThinking,
+    onContent: (chunk) => splitter.push(chunk),
+    onThinking: handlers.onThinking
+  });
+  return { ...splitter.finish(), finishReason };
 }
 
 // workbench/server/taste.ts
 var TasteUnavailableError = class extends Error {
 };
-var SYSTEM_PROMPT2 = [
+var SYSTEM_PROMPT3 = [
   "\u4F60\u662F\u7528\u6237\u7684\u4E00\u4F4D\u8001\u670B\u53CB\uFF0C\u719F\u6089\u97F3\u4E50\u3002\u4E0B\u9762\u662F\u4ED6\u6700\u8FD1\u7684\u8046\u542C\u8BB0\u5F55\u7EDF\u8BA1\uFF0C\u8BF7\u5E2E\u4ED6\u770B\u770B\u4ED6\u6700\u8FD1\u7684\u559C\u597D\u3002",
   "\u8981\u6C42\uFF1A",
   "1. \u53EA\u4F9D\u636E\u7ED9\u51FA\u7684\u6570\u636E\uFF0C\u4E0D\u7F16\u9020\u4ED6\u6CA1\u542C\u8FC7\u7684\u6B4C\u3001\u6CA1\u6709\u7684\u7ECF\u5386\uFF0C\u4E0D\u51ED\u7A7A\u63A8\u65AD\u5E74\u9F84\u3001\u804C\u4E1A\u3001\u611F\u60C5\u72B6\u6001\u3002",
-  "2. \u6307\u51FA\u771F\u5B9E\u53EF\u89C1\u7684\u89C4\u5F8B\uFF1A\u53CD\u590D\u542C\u7684\u6B4C\u6216\u6B4C\u624B\u3001\u96C6\u4E2D\u542C\u6B4C\u7684\u65F6\u6BB5\u3001\u6700\u8FD1\u4E0E\u4E4B\u524D\u7684\u53D8\u5316\u3001\u542C\u6B4C\u91CF\u7684\u8D77\u4F0F\u3002",
+  "2. \u6307\u51FA\u771F\u5B9E\u53EF\u89C1\u7684\u89C4\u5F8B\uFF1A\u53CD\u590D\u542C\u7684\u6B4C\u6216\u6B4C\u624B\u3001\u96C6\u4E2D\u542C\u6B4C\u7684\u65F6\u6BB5\u3001\u6700\u8FD1\u4E0E\u4E4B\u524D\u7684\u53D8\u5316\u3001\u542C\u6B4C\u91CF\u7684\u8D77\u4F0F\uFF1B\u5982\u679C\u7ED9\u51FA\u4E86\u300C\u6DF1\u591C\u53CD\u590D\u542C\u7684\u6B4C\u300D\u6216\u300C\u542C\u4E0E\u5199\u300D\u7684\u5BF9\u7167\uFF0C\u53EF\u4EE5\u7ED3\u5408\u8D77\u6765\u770B\uFF08\u6BD4\u5982\u67D0\u9996\u6B4C\u65E2\u5E38\u5728\u6DF1\u591C\u542C\u3001\u4E5F\u5199\u5F97\u591A\uFF09\uFF0C\u4F46\u53EA\u9648\u8FF0\u6570\u636E\uFF0C\u4E0D\u8981\u63A8\u65AD\u4ED6\u7684\u5FC3\u60C5\u6216\u7ECF\u5386\u3002",
   "3. \u6570\u636E\u5F88\u5C11\u65F6\uFF0C\u5982\u5B9E\u8BF4\u201C\u76EE\u524D\u80FD\u770B\u51FA\u7684\u6709\u9650\u201D\uFF0C\u4E0D\u8981\u786C\u51D1\u3002",
   "4. \u8BED\u6C14\u6E29\u548C\u3001\u53E3\u8BED\u5316\uFF0C\u4E0D\u8BF4\u6559\uFF0C\u4E0D\u4E0B\u8BCA\u65AD\uFF1B\u4F7F\u7528\u201C\u770B\u8D77\u6765\u201D\u201C\u4F3C\u4E4E\u201D\u8FD9\u7C7B\u63AA\u8F9E\u3002",
   "5. \u53EF\u4EE5\u5728\u6700\u540E\u7ED9\u4E00\u53E5\u201C\u53EF\u4EE5\u8BD5\u8BD5\u201D\u7684\u5EFA\u8BAE\uFF08\u6BD4\u5982\u67D0\u7C7B\u98CE\u683C\u6216\u4E00\u4E2A\u6B4C\u624B\u65B9\u5411\uFF09\uFF0C\u5FC5\u987B\u662F\u5EFA\u8BAE\u800C\u4E0D\u662F\u7ED3\u8BBA\u3002",
@@ -42252,21 +42542,24 @@ var SYSTEM_PROMPT2 = [
   '{"summary":"2-3 \u53E5\u603B\u4F53\u5370\u8C61","points":[{"title":"8\u5B57\u4EE5\u5185","body":"1-2 \u53E5\uFF0C\u5199\u660E\u4F9D\u636E\u7684\u6570\u636E"}],"hint":"\u4E00\u53E5\u5EFA\u8BAE\uFF0C\u53EF\u4E3A\u7A7A\u5B57\u7B26\u4E32"}',
   "points \u7ED9 2 \u5230 4 \u6761\u3002"
 ].join("\n");
-async function runTaste(input, client = new DeepSeekClient()) {
-  if (!client.isConfigured) throw new TasteUnavailableError("LLM_NOT_CONFIGURED");
+function buildTastePrompt(input) {
   const lines = [
     `\u7D2F\u8BA1\u8046\u542C ${input.totalMinutes} \u5206\u949F\uFF0C\u5171 ${input.sessions} \u6B21\u3002`,
     `\u5E38\u542C\u6B4C\u66F2\uFF1A${input.topSongs.map((s) => `${s.name}${s.artist ? ` - ${s.artist}` : ""}\uFF08${s.plays} \u6B21/${s.minutes} \u5206\uFF09`).join("\uFF1B") || "\u65E0"}`,
     `\u5E38\u542C\u6B4C\u624B\uFF1A${input.topArtists.map((a) => `${a.name}\uFF08${a.plays} \u6B21/${a.minutes} \u5206\uFF09`).join("\uFF1B") || "\u65E0"}`,
     `0-23 \u70B9\u5404\u65F6\u6BB5\u5206\u949F\u6570\uFF1A${input.byHour.join(",")}`,
     `\u6700\u8FD1 14 \u5929\u6BCF\u65E5\u5206\u949F\u6570\uFF1A${input.last14Days.map((d) => `${d.date.slice(5)}:${d.minutes}`).join(" ")}`,
+    ...input.nightSongs?.length ? [`\u6DF1\u591C\uFF0823 \u70B9\u5230\u51CC\u6668 5 \u70B9\uFF09\u5728\u4E0D\u540C\u591C\u665A\u53CD\u590D\u542C\u7684\u6B4C\uFF1A${input.nightSongs.map((s) => `${s.name}${s.artist ? ` - ${s.artist}` : ""}\uFF08${s.nightDays} \u4E2A\u591C\u665A/${s.nights} \u6B21/${s.minutes} \u5206\uFF09`).join("\uFF1B")}`] : [],
+    ...input.notes ? [
+      `\u4ED6\u5728\u8FD9\u4E9B\u6B4C\u4E0B\u5171\u5199\u8FC7 ${input.notes.totalNotes} \u6761\u7B14\u8BB0\uFF08\u8FD9\u91CC\u53EA\u6709\u6761\u6570\uFF0C\u4F60\u770B\u4E0D\u5230\u5185\u5BB9\uFF0C\u4E5F\u4E0D\u8981\u731C\u5185\u5BB9\uFF09\u3002`,
+      `\u5199\u5F97\u6700\u591A\u7684\u6B4C\uFF1A${input.notes.mostWritten.map((s) => `${s.name}${s.artist ? ` - ${s.artist}` : ""}\uFF08${s.notes} \u6761\u7B14\u8BB0/\u542C\u4E86 ${s.plays} \u6B21\uFF09`).join("\uFF1B") || "\u65E0"}`,
+      `\u5E38\u542C\u4F46\u4E00\u6761\u6CA1\u5199\u8FC7\uFF1A${input.notes.listenedNotWritten.map((s) => `${s.name}${s.artist ? ` - ${s.artist}` : ""}\uFF08${s.plays} \u6B21\uFF09`).join("\uFF1B") || "\u65E0"}`
+    ] : [],
     `\u6700\u8FD1\u542C\u8FC7\uFF08\u65B0\u5230\u65E7\uFF09\uFF1A${input.recent.map((r) => `${r.at} ${r.name}${r.artist ? ` - ${r.artist}` : ""}${r.completed ? "" : "\uFF08\u672A\u542C\u5B8C\uFF09"}`).join("\uFF1B") || "\u65E0"}`
   ];
-  const raw = await client.completeJson({
-    messages: [{ role: "system", content: SYSTEM_PROMPT2 }, { role: "user", content: lines.join("\n") }],
-    temperature: 0.6,
-    maxTokens: 6e3
-  });
+  return lines.join("\n");
+}
+function normalizeTaste(raw, extraWarnings = []) {
   const summary = typeof raw.summary === "string" ? raw.summary.trim().slice(0, 600) : "";
   const points = [];
   for (const item of Array.isArray(raw.points) ? raw.points : []) {
@@ -42277,13 +42570,124 @@ async function runTaste(input, client = new DeepSeekClient()) {
     if (title && body) points.push({ title, body });
   }
   if (!summary && !points.length) throw new Error("TASTE_EMPTY");
-  return { summary, points: points.slice(0, 4), hint: typeof raw.hint === "string" ? raw.hint.trim().slice(0, 300) : "" };
+  return { summary, points: points.slice(0, 4), hint: typeof raw.hint === "string" ? raw.hint.trim().slice(0, 300) : "", warnings: extraWarnings };
+}
+async function runTaste(input, client = new DeepSeekClient()) {
+  if (!client.isConfigured) throw new TasteUnavailableError("LLM_NOT_CONFIGURED");
+  const raw = await client.completeJson({
+    messages: [{ role: "system", content: SYSTEM_PROMPT3 }, { role: "user", content: buildTastePrompt(input) }],
+    temperature: 0.6,
+    maxTokens: 6e3
+  });
+  const { warnings: _warnings, ...result } = normalizeTaste(raw);
+  return result;
+}
+var STREAM_SYSTEM_PROMPT2 = [
+  ...SYSTEM_PROMPT3.split("\n").slice(0, 7),
+  "\u8F93\u51FA\u683C\u5F0F\uFF08\u4E25\u683C\u9075\u5B88\uFF0C\u5206\u4E24\u90E8\u5206\uFF09\uFF1A",
+  "\u7B2C\u4E00\u90E8\u5206\uFF1A\u76F4\u63A5\u5199 2-3 \u53E5\u603B\u4F53\u5370\u8C61\uFF0C\u7EAF\u6587\u5B57\uFF0C\u4E0D\u8981\u6807\u9898\u3001\u4E0D\u8981 Markdown\u3001\u4E0D\u8981\u5217\u8868\u3001\u4E0D\u8981 JSON\u3002",
+  `\u7B2C\u4E8C\u90E8\u5206\uFF1A\u53E6\u8D77\u4E00\u884C\uFF0C\u53EA\u5199 ${DATA_DELIMITER}\uFF0C\u7136\u540E\u7D27\u63A5\u7740\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF1A`,
+  '{"points":[{"title":"8\u5B57\u4EE5\u5185","body":"1-2 \u53E5\uFF0C\u5199\u660E\u4F9D\u636E\u7684\u6570\u636E"}],"hint":"\u4E00\u53E5\u5EFA\u8BAE\uFF0C\u53EF\u4E3A\u7A7A\u5B57\u7B26\u4E32"}',
+  "points \u7ED9 2 \u5230 4 \u6761\u3002"
+].join("\n");
+async function streamTaste(input, handlers, client = new DeepSeekClient(), signal) {
+  if (!client.isConfigured) throw new TasteUnavailableError("LLM_NOT_CONFIGURED");
+  const done = await runProseStream(client, { system: STREAM_SYSTEM_PROMPT2, user: buildTastePrompt(input), temperature: 0.6, maxTokens: 6e3, signal }, handlers);
+  const parsed = parseJsonLoose(done.data);
+  const warnings = [];
+  if (!parsed) warnings.push(done.finishReason === "length" ? "\u6A21\u578B\u8F93\u51FA\u88AB\u622A\u65AD\uFF0C\u8981\u70B9\u6CA1\u6709\u751F\u6210\u5B8C\u6574\uFF0C\u53EF\u4EE5\u91CD\u8BD5\u3002" : "\u8981\u70B9\u6CA1\u6709\u89E3\u6790\u51FA\u6765\uFF0C\u53EF\u4EE5\u91CD\u65B0\u5206\u6790\u4E00\u6B21\u3002");
+  return normalizeTaste({ ...parsed ?? {}, summary: done.prose || parsed?.summary || "" }, warnings);
+}
+
+// workbench/server/reading.ts
+var ReadingUnavailableError = class extends Error {
+};
+var READING_MAX_LINES = 200;
+var READING_MAX_PICKED = 14;
+var READING_EMOTION_MAX = 8;
+var READING_NOTE_MAX = 60;
+var SYSTEM_PROMPT4 = [
+  "\u4F60\u662F\u4E00\u4F4D\u5B89\u9759\u7684\u6B4C\u8BCD\u8BFB\u8005\uFF0C\u5E2E\u542C\u6B4C\u7684\u4EBA\u8BFB\u61C2\u6B4C\u8BCD\u91CC\u503C\u5F97\u505C\u4E00\u4E0B\u7684\u53E5\u5B50\u3002",
+  "\u89C4\u5219\uFF1A",
+  "1. \u53EA\u4F9D\u636E\u7ED9\u51FA\u7684\u6B4C\u8BCD\u6587\u5B57\uFF0C\u4E0D\u7F16\u9020\u6B4C\u624B\u7684\u7ECF\u5386\u3001\u521B\u4F5C\u80CC\u666F\u6216\u8FD9\u9996\u6B4C\u80CC\u540E\u7684\u6545\u4E8B\u3002",
+  "2. \u53EA\u6311\u771F\u6B63\u6709\u610F\u8C61\u3001\u6709\u8F6C\u6298\u6216\u627F\u8F7D\u6838\u5FC3\u610F\u601D\u7684\u53E5\u5B50\u6765\u89E3\u8BFB\uFF0C\u6700\u591A 12 \u53E5\uFF0C\u5176\u4F59\u4E0D\u5199\u3002\u4E0D\u8981\u6BCF\u53E5\u90FD\u89E3\u8BFB\u3002",
+  "3. \u89E3\u8BFB\u662F\u4E00\u53E5\u8BDD\uFF0C\u8BF4\u8FD9\u53E5\u5728\u8BF4\u4EC0\u4E48\u3001\u6697\u793A\u4E86\u4EC0\u4E48\uFF0C\u4E0D\u8D85\u8FC7 30 \u4E2A\u5B57\uFF0C\u4E0D\u8981\u5347\u534E\uFF0C\u4E0D\u8981\u8BF4\u6559\uFF0C\u7528\u201C\u770B\u8D77\u6765\u201D\u201C\u50CF\u662F\u201D\u8FD9\u7C7B\u63AA\u8F9E\uFF0C\u4E0D\u4E0B\u5B9A\u8BBA\u3002",
+  "4. \u60C5\u7EEA\u8BCD\u662F 2 \u5230 4 \u4E2A\u5B57\u7684\u4E2D\u6587\u8BCD\uFF0C\u6BD4\u5982\u201C\u6005\u7136\u201D\u201C\u514B\u5236\u201D\u201C\u671F\u5F85\u201D\u3002",
+  "\u8F93\u51FA\u683C\u5F0F\uFF08\u4E25\u683C\u9075\u5B88\uFF0C\u5206\u4E24\u90E8\u5206\uFF09\uFF1A",
+  "\u7B2C\u4E00\u90E8\u5206\uFF1A\u6BCF\u4E2A\u89E3\u8BFB\u5360\u4E00\u884C\uFF0C\u683C\u5F0F\u4E3A\uFF1A\u5E8F\u53F7|\u60C5\u7EEA\u8BCD|\u4E00\u53E5\u89E3\u8BFB\u3002\u5E8F\u53F7\u5C31\u662F\u6B4C\u8BCD\u524D\u9762\u7684\u7F16\u53F7\uFF0C\u4E0D\u8981\u5199\u522B\u7684\u6587\u5B57\uFF0C\u4E0D\u8981\u6807\u9898\u3002",
+  `\u7B2C\u4E8C\u90E8\u5206\uFF1A\u53E6\u8D77\u4E00\u884C\uFF0C\u53EA\u5199 ${DATA_DELIMITER}\uFF0C\u7136\u540E\u7D27\u63A5\u7740\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF1A`,
+  '{"insights":[{"title":"8\u5B57\u4EE5\u5185","body":"1-2\u53E5\uFF0C\u8BF4\u660E\u6574\u9996\u6B4C\u7684\u4E00\u4E2A\u8BFB\u6CD5","lines":[\u652F\u6491\u5B83\u7684\u6B4C\u8BCD\u5E8F\u53F7\uFF0C\u6700\u591A4\u4E2A]}]}',
+  "insights \u7ED9 2 \u5230 3 \u6761\u3002"
+].join("\n");
+function buildReadingPrompt(input) {
+  const head = `\u6B4C\u66F2\uFF1A\u300A${input.track.title || "\u672A\u77E5\u66F2\u76EE"}\u300B${input.track.artist ? ` - ${input.track.artist}` : ""}`;
+  return `${head}
+
+\u6B4C\u8BCD\uFF1A
+${input.lines.map((line, index) => `${index + 1}. ${line}`).join("\n")}`;
+}
+var READING_LINE = /^\s*(\d{1,3})\s*[|｜]\s*([^|｜]{1,20}?)\s*[|｜]\s*(.+?)\s*$/;
+function clamp5(text, max) {
+  const chars = [...text.trim()];
+  return chars.length > max ? `${chars.slice(0, max - 1).join("")}\u2026` : chars.join("");
+}
+function parseReadingLine(line, lineCount) {
+  const match = READING_LINE.exec(line.replace(/^[\s\-*•]+/, ""));
+  if (!match) return null;
+  const index = Number(match[1]) - 1;
+  if (!Number.isInteger(index) || index < 0 || index >= lineCount) return null;
+  const emotion = clamp5(match[2].replace(/[“”"「」『』]/g, ""), READING_EMOTION_MAX);
+  const note = clamp5(match[3].replace(/^[“"「『]|[”"」』]$/g, ""), READING_NOTE_MAX);
+  return emotion && note ? { index, emotion, note } : null;
+}
+function normalizeReading(prose, dataText, lineCount, extraWarnings = []) {
+  const seen = /* @__PURE__ */ new Set();
+  const lines = [];
+  for (const raw of prose.split(/\r?\n/)) {
+    const item = parseReadingLine(raw, lineCount);
+    if (!item || seen.has(item.index) || lines.length >= READING_MAX_PICKED) continue;
+    seen.add(item.index);
+    lines.push(item);
+  }
+  lines.sort((a, b) => a.index - b.index);
+  const insights = [];
+  const parsed = parseJsonLoose(dataText);
+  for (const item of Array.isArray(parsed?.insights) ? parsed.insights : []) {
+    if (!item || typeof item !== "object") continue;
+    const { title, body, lines: refs } = item;
+    const t = typeof title === "string" ? clamp5(title, 20) : "";
+    const b = typeof body === "string" ? clamp5(body, 200) : "";
+    if (!t || !b) continue;
+    const evidence = [...new Set((Array.isArray(refs) ? refs : []).map((n) => Number(n) - 1).filter((n) => Number.isInteger(n) && n >= 0 && n < lineCount))].sort((x, y) => x - y).slice(0, 4);
+    insights.push({ title: t, body: b, lines: evidence });
+  }
+  if (!lines.length && !insights.length) throw new Error("READING_EMPTY");
+  return { lines, insights: insights.slice(0, 3), warnings: extraWarnings };
+}
+async function streamReading(input, handlers, client = new DeepSeekClient(), signal) {
+  if (!client.isConfigured) throw new ReadingUnavailableError("LLM_NOT_CONFIGURED");
+  const splitter = createProseSplitter(handlers.onText);
+  const { finishReason } = await client.streamChat({
+    messages: [{ role: "system", content: SYSTEM_PROMPT4 }, { role: "user", content: buildReadingPrompt(input) }],
+    signal,
+    temperature: 0.4,
+    maxTokens: 3e3,
+    disableThinking: true,
+    onThinking: handlers.onThinking,
+    onContent: (chunk) => splitter.push(chunk)
+  });
+  const done = splitter.finish();
+  const warnings = [];
+  if (finishReason === "length") warnings.push("\u6A21\u578B\u8F93\u51FA\u88AB\u622A\u65AD\uFF0C\u540E\u9762\u7684\u89E3\u8BFB\u53EF\u80FD\u4E0D\u5B8C\u6574\uFF0C\u53EF\u4EE5\u91CD\u65B0\u89E3\u8BFB\u4E00\u6B21\u3002");
+  else if (!done.data.trim()) warnings.push("\u6574\u9996\u6B4C\u7684\u51E0\u6761\u8BFB\u6CD5\u6CA1\u6709\u751F\u6210\u51FA\u6765\uFF0C\u53EF\u4EE5\u91CD\u65B0\u89E3\u8BFB\u4E00\u6B21\u3002");
+  return normalizeReading(done.prose, done.data, input.lines.length, warnings);
 }
 
 // workbench/server/review.ts
 var REVIEW_MAX_NOTES = 60;
 var REVIEW_MAX_TOTAL_CHARS = 3e4;
-var SYSTEM_PROMPT3 = [
+var REVIEW_DATA_DELIMITER = DATA_DELIMITER;
+var RULES2 = [
   "\u4F60\u662F\u7528\u6237\u957F\u671F\u966A\u4F34\u7684\u4E00\u4F4D\u670B\u53CB\uFF0C\u6B63\u5728\u8BFB\u4ED6\u5728\u542C\u6B4C\u65F6\u968F\u624B\u5199\u4E0B\u7684\u7B14\u8BB0\uFF0C\u5E2E\u4ED6\u56DE\u987E\u548C\u6574\u7406\u3002",
   "\u8BED\u6C14\uFF1A\u6E29\u548C\u3001\u76F4\u63A5\u3001\u50CF\u8BA4\u771F\u8BFB\u8FC7\u4ED6\u7B14\u8BB0\u7684\u670B\u53CB\uFF1B\u4E0D\u8BF4\u6559\uFF0C\u4E0D\u5806\u780C\u5957\u8BDD\uFF0C\u4E0D\u4F7F\u7528\u5FC3\u7406\u8BCA\u65AD\u5F0F\u63AA\u8F9E\u3002",
   "\u4E25\u683C\u89C4\u5219\uFF1A",
@@ -42292,9 +42696,20 @@ var SYSTEM_PROMPT3 = [
   "3. \u5982\u679C\u7B14\u8BB0\u592A\u5C11\u6216\u592A\u96F6\u6563\uFF0C\u5982\u5B9E\u8BF4\u660E\u201C\u76EE\u524D\u80FD\u770B\u51FA\u7684\u6709\u9650\u201D\uFF0C\u4E0D\u8981\u786C\u51D1\u4E3B\u9898\u3002",
   "4. \u53EF\u4EE5\u6307\u51FA\u53CD\u590D\u51FA\u73B0\u7684\u60C5\u7EEA\u3001\u6B4C\u66F2\u3001\u6B4C\u8BCD\u53E5\u5B50\u3001\u65F6\u95F4\u89C4\u5F8B\uFF0C\u4F46\u8981\u8868\u8FF0\u4E3A\u201C\u770B\u8D77\u6765\u201D\u201C\u4F3C\u4E4E\u201D\uFF0C\u4E0D\u4E0B\u5B9A\u8BBA\u3002",
   "5. \u5982\u679C\u7B14\u8BB0\u4E2D\u51FA\u73B0\u660E\u663E\u7684\u81EA\u4F24\u6216\u7EDD\u671B\u8FF9\u8C61\uFF0C\u7528\u5173\u5FC3\u7684\u53E3\u543B\u5EFA\u8BAE\u4ED6\u8054\u7CFB\u8EAB\u8FB9\u53EF\u4FE1\u4EFB\u7684\u4EBA\u6216\u5F53\u5730\u7684\u5371\u673A\u63F4\u52A9\u6E20\u9053\uFF0C\u4E0D\u8981\u56DE\u907F\u3002",
-  "6. moods \u53EA\u8BB0\u5F55\u7B14\u8BB0\u91CC\u660E\u786E\u5199\u51FA\u6216\u660E\u663E\u6D41\u9732\u7684\u60C5\u7EEA\uFF1A\u6BCF\u6761\u7B14\u8BB0\u6700\u591A\u4E00\u6761\uFF0C\u4E0D\u786E\u5B9A\u5C31\u4E0D\u5217\uFF0C\u6700\u591A 20 \u6761\uFF1Bmood \u662F 6 \u5B57\u4EE5\u5185\u7684\u60C5\u7EEA\u8BCD\uFF1Btone \u53D6 -1\uFF08\u4F4E\u843D\u3001\u6C89\u91CD\uFF09\u30010\uFF08\u5E73\u9759\u3001\u590D\u6742\uFF09\u6216 1\uFF08\u8F7B\u5FEB\u3001\u6E29\u6696\uFF09\u3002",
+  "6. moods \u53EA\u8BB0\u5F55\u7B14\u8BB0\u91CC\u660E\u786E\u5199\u51FA\u6216\u660E\u663E\u6D41\u9732\u7684\u60C5\u7EEA\uFF1A\u6BCF\u6761\u7B14\u8BB0\u6700\u591A\u4E00\u6761\uFF0C\u4E0D\u786E\u5B9A\u5C31\u4E0D\u5217\uFF0C\u6700\u591A 20 \u6761\uFF1Bmood \u662F 6 \u5B57\u4EE5\u5185\u7684\u60C5\u7EEA\u8BCD\uFF1Btone \u53D6 -1\uFF08\u4F4E\u843D\u3001\u6C89\u91CD\uFF09\u30010\uFF08\u5E73\u9759\u3001\u590D\u6742\uFF09\u6216 1\uFF08\u8F7B\u5FEB\u3001\u6E29\u6696\uFF09\u3002"
+];
+var SYSTEM_PROMPT5 = [
+  ...RULES2,
   "\u53EA\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF0C\u7ED3\u6784\u5982\u4E0B\uFF1A",
   '{"overview":"2-4 \u53E5\u6574\u4F53\u56DE\u987E","themes":[{"title":"\u4E3B\u9898\u540D\uFF0C12 \u5B57\u4EE5\u5185","body":"2-3 \u53E5\uFF0C\u8BF4\u660E\u4F60\u770B\u5230\u4E86\u4EC0\u4E48","noteIds":["N1"]}],"moods":[{"noteId":"N1","mood":"\u60F3\u5FF5","tone":-1}],"question":"\u4E00\u4E2A\u503C\u5F97\u4ED6\u63A5\u7740\u60F3\u7684\u95EE\u9898\uFF0C1 \u53E5"}',
+  "themes \u7ED9 2 \u5230 4 \u4E2A\u3002"
+].join("\n");
+var STREAM_SYSTEM_PROMPT3 = [
+  ...RULES2,
+  "\u8F93\u51FA\u683C\u5F0F\uFF08\u4E25\u683C\u9075\u5B88\uFF0C\u5206\u4E24\u90E8\u5206\uFF09\uFF1A",
+  `\u7B2C\u4E00\u90E8\u5206\uFF1A\u76F4\u63A5\u5199 2-4 \u53E5\u6574\u4F53\u56DE\u987E\uFF0C\u7EAF\u6587\u5B57\uFF0C\u4E0D\u8981\u6807\u9898\u3001\u4E0D\u8981 Markdown\u3001\u4E0D\u8981\u5217\u8868\u3001\u4E0D\u8981 JSON\u3002`,
+  `\u7B2C\u4E8C\u90E8\u5206\uFF1A\u53E6\u8D77\u4E00\u884C\uFF0C\u53EA\u5199 ${REVIEW_DATA_DELIMITER}\uFF0C\u7136\u540E\u7D27\u63A5\u7740\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF0C\u7ED3\u6784\u5982\u4E0B\uFF1A`,
+  '{"themes":[{"title":"\u4E3B\u9898\u540D\uFF0C12 \u5B57\u4EE5\u5185","body":"2-3 \u53E5\uFF0C\u8BF4\u660E\u4F60\u770B\u5230\u4E86\u4EC0\u4E48","noteIds":["N1"]}],"moods":[{"noteId":"N1","mood":"\u60F3\u5FF5","tone":-1}],"question":"\u4E00\u4E2A\u503C\u5F97\u4ED6\u63A5\u7740\u60F3\u7684\u95EE\u9898\uFF0C1 \u53E5"}',
   "themes \u7ED9 2 \u5230 4 \u4E2A\u3002"
 ].join("\n");
 function readTone(value) {
@@ -42303,8 +42718,7 @@ function readTone(value) {
 }
 var ReviewUnavailableError = class extends Error {
 };
-async function runReview(input, client = new DeepSeekClient()) {
-  if (!client.isConfigured) throw new ReviewUnavailableError("LLM_NOT_CONFIGURED");
+function buildReviewPrompt(input) {
   const notes = input.notes.slice(0, REVIEW_MAX_NOTES);
   const labelToId = /* @__PURE__ */ new Map();
   const lines = [];
@@ -42315,18 +42729,16 @@ async function runReview(input, client = new DeepSeekClient()) {
     lines.push(`${head}${note.quote ? `
 \u6B4C\u8BCD\uFF1A${note.quote}` : ""}${note.title ? `
 \u6807\u9898\uFF1A${note.title}` : ""}
-\u7B14\u8BB0\uFF1A${note.body}`);
+\u7B14\u8BB0\uFF1A${stripAskLines(note.body) || note.body}`);
   });
   const userContent = `${input.focus ? `\u4ED6\u8FD9\u6B21\u60F3\u5173\u6CE8\u7684\u662F\uFF1A${input.focus}
 
 ` : ""}\u4EE5\u4E0B\u662F ${notes.length} \u6761\u7B14\u8BB0\uFF08\u7531\u65B0\u5230\u65E7\uFF09\uFF1A
 
 ${lines.join("\n\n---\n\n")}`;
-  const raw = await client.completeJson({
-    messages: [{ role: "system", content: SYSTEM_PROMPT3 }, { role: "user", content: userContent }],
-    temperature: 0.5,
-    maxTokens: 8e3
-  });
+  return { notes, labelToId, userContent };
+}
+function normalizeReview(raw, labelToId, noteCount, extraWarnings = []) {
   const themes = [];
   const dropped = [];
   for (const item of Array.isArray(raw.themes) ? raw.themes : []) {
@@ -42360,9 +42772,47 @@ ${lines.join("\n\n---\n\n")}`;
     themes: themes.slice(0, 4),
     moods: moods.slice(0, 20),
     question: typeof raw.question === "string" ? raw.question.trim().slice(0, 300) : "",
-    noteCount: notes.length,
-    warnings: dropped.length ? [`\u5DF2\u4E22\u5F03 ${dropped.length} \u4E2A\u65E0\u6CD5\u5BF9\u5E94\u5230\u4F60\u7B14\u8BB0\u7684\u4E3B\u9898\u3002`] : []
+    noteCount,
+    warnings: [...dropped.length ? [`\u5DF2\u4E22\u5F03 ${dropped.length} \u4E2A\u65E0\u6CD5\u5BF9\u5E94\u5230\u4F60\u7B14\u8BB0\u7684\u4E3B\u9898\u3002`] : [], ...extraWarnings]
   };
+}
+async function runReview(input, client = new DeepSeekClient()) {
+  if (!client.isConfigured) throw new ReviewUnavailableError("LLM_NOT_CONFIGURED");
+  const { notes, labelToId, userContent } = buildReviewPrompt(input);
+  const raw = await client.completeJson({
+    messages: [{ role: "system", content: SYSTEM_PROMPT5 }, { role: "user", content: userContent }],
+    temperature: 0.5,
+    maxTokens: 8e3
+  });
+  return normalizeReview(raw, labelToId, notes.length);
+}
+function createReviewSplitter(onText) {
+  const splitter = createProseSplitter(onText);
+  return { push: splitter.push, finish() {
+    const done = splitter.finish();
+    return { overview: done.prose, data: done.data };
+  } };
+}
+function parseJsonObject(text) {
+  return parseJsonLoose(text);
+}
+async function streamReview(input, handlers, client = new DeepSeekClient(), signal) {
+  if (!client.isConfigured) throw new ReviewUnavailableError("LLM_NOT_CONFIGURED");
+  const { notes, labelToId, userContent } = buildReviewPrompt(input);
+  const splitter = createReviewSplitter(handlers.onText);
+  const { finishReason } = await client.streamChat({
+    messages: [{ role: "system", content: STREAM_SYSTEM_PROMPT3 }, { role: "user", content: userContent }],
+    signal,
+    temperature: 0.5,
+    maxTokens: 8e3,
+    onContent: (chunk) => splitter.push(chunk),
+    onThinking: handlers.onThinking
+  });
+  const { overview, data } = splitter.finish();
+  const parsed = parseJsonObject(data);
+  const warnings = [];
+  if (!parsed) warnings.push(finishReason === "length" ? "\u6A21\u578B\u8F93\u51FA\u88AB\u622A\u65AD\uFF0C\u4E3B\u9898\u548C\u5FC3\u60C5\u7EBF\u7D22\u6CA1\u6709\u751F\u6210\u5B8C\u6574\uFF0C\u53EF\u4EE5\u7F29\u5C0F\u8303\u56F4\u540E\u91CD\u8BD5\u3002" : "\u4E3B\u9898\u548C\u5FC3\u60C5\u7EBF\u7D22\u6CA1\u6709\u89E3\u6790\u51FA\u6765\uFF0C\u53EF\u4EE5\u91CD\u65B0\u751F\u6210\u4E00\u6B21\u3002");
+  return normalizeReview({ ...parsed ?? {}, overview: overview || parsed?.overview || "" }, labelToId, notes.length, warnings);
 }
 
 // workbench/server/app.ts
@@ -42440,8 +42890,8 @@ function buildApp() {
         })),
         groups: (rhyme?.groups || []).map((group) => ({ id: group.id || "", label: group.label || "\u5019\u9009\u97F5\u7EC4", description: group.description || "" })),
         metrics: { energy: result.vibeVector.energy, melancholy: result.vibeVector.melancholy, narrativeTension: result.vibeVector.narrativeTension },
-        bars: contract.data.bars.map((bar) => ({ energy: bar.energy ?? 0, tension: bar.tension ?? 0 })),
-        insights: source === "rules" ? [] : contract.data.insights.map((insight) => ({ title: insight.title, body: insight.body })),
+        bars: toBarViews(contract.data.bars, source !== "rules"),
+        insights: source === "rules" ? [] : toInsightViews(contract.data.insights, contract.source.lyrics.lines.length),
         warnings: [
           ...source === "rules" ? ["\u5F53\u524D\u4F7F\u7528 EPN \u89C4\u5219\u7ED3\u679C\uFF0C\u672A\u83B7\u5F97\u6709\u6548 LLM \u8F93\u51FA\u3002"] : [],
           ...source === "llm-rules-fallback" ? ["\u6A21\u578B\u53C2\u4E0E\u4E86\u5206\u6790\uFF0C\u4F46\u97F5\u811A\u91C7\u7528\u89C4\u5219\u56DE\u9000\u7ED3\u679C\u3002"] : [],
@@ -42454,37 +42904,90 @@ function buildApp() {
       active--;
     }
   });
-  app2.post("/api/review/run", {
-    bodyLimit: 256 * 1024,
-    schema: {
-      body: {
-        type: "object",
-        additionalProperties: false,
-        required: ["notes"],
-        properties: {
-          focus: { type: "string", maxLength: 200 },
-          notes: {
-            type: "array",
-            minItems: 1,
-            maxItems: REVIEW_MAX_NOTES,
-            items: {
-              type: "object",
-              additionalProperties: false,
-              required: ["id", "body", "createdAt"],
-              properties: {
-                id: { type: "string", minLength: 1, maxLength: 80 },
-                title: { type: "string", maxLength: 200, default: "" },
-                body: { type: "string", minLength: 1, maxLength: 4e3 },
-                quote: { type: "string", maxLength: 400, default: "" },
-                trackTitle: { type: "string", maxLength: 160, default: "" },
-                artist: { type: "string", maxLength: 160, default: "" },
-                createdAt: { type: "string", minLength: 1, maxLength: 40 }
-              }
+  const reviewSchema = {
+    body: {
+      type: "object",
+      additionalProperties: false,
+      required: ["notes"],
+      properties: {
+        focus: { type: "string", maxLength: 200 },
+        notes: {
+          type: "array",
+          minItems: 1,
+          maxItems: REVIEW_MAX_NOTES,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "body", "createdAt"],
+            properties: {
+              id: { type: "string", minLength: 1, maxLength: 80 },
+              title: { type: "string", maxLength: 200, default: "" },
+              body: { type: "string", minLength: 1, maxLength: 4e3 },
+              quote: { type: "string", maxLength: 400, default: "" },
+              trackTitle: { type: "string", maxLength: 160, default: "" },
+              artist: { type: "string", maxLength: 160, default: "" },
+              createdAt: { type: "string", minLength: 1, maxLength: 40 }
             }
           }
         }
       }
     }
+  };
+  const llmErrorText = (error, fallback) => {
+    const text = error instanceof Error ? error.message : "";
+    return /^LLM |API Key|余额|模型|请求过于频繁|上游服务/.test(text) ? text : fallback;
+  };
+  async function streamEndpoint(reply, run, errors) {
+    if (Date.now() - windowStart > 6e4) {
+      windowStart = Date.now();
+      requests = 0;
+    }
+    if (requests >= 20 || active >= 2) return reply.code(429).send({ message: "\u8BF7\u6C42\u8F83\u591A\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002" });
+    requests++;
+    active++;
+    const abort = new AbortController();
+    const raw = reply.raw;
+    raw.on("close", () => {
+      if (!raw.writableEnded) abort.abort();
+    });
+    reply.hijack();
+    raw.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+    const send = (event, data) => {
+      if (!raw.writableEnded && !raw.destroyed) raw.write(`event: ${event}
+data: ${JSON.stringify(data)}
+
+`);
+    };
+    const heartbeat = setInterval(() => {
+      if (!raw.writableEnded && !raw.destroyed) raw.write(": ping\n\n");
+    }, 1e4);
+    try {
+      send("start", { ok: true });
+      const result = await run({ onText: (text) => send("text", { text }), onThinking: () => send("thinking", {}) }, abort.signal);
+      send("done", result);
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        if (errors.unavailable(error)) send("error", { code: "LLM_NOT_CONFIGURED", message: errors.notConfigured });
+        else send("error", { code: "LLM_FAILED", message: errors.map?.(error) ?? llmErrorText(error, errors.failed) });
+      }
+    } finally {
+      clearInterval(heartbeat);
+      active--;
+      if (!raw.writableEnded) raw.end();
+    }
+  }
+  app2.post("/api/review/stream", { bodyLimit: 256 * 1024, schema: reviewSchema }, async (request, reply) => {
+    const total = request.body.notes.reduce((sum, note) => sum + note.body.length + (note.title?.length || 0) + (note.quote?.length || 0), 0);
+    if (total > REVIEW_MAX_TOTAL_CHARS) return reply.code(413).send({ message: "\u9009\u4E2D\u7684\u7B14\u8BB0\u592A\u957F\uFF0C\u8BF7\u7F29\u5C0F\u65F6\u95F4\u8303\u56F4\u3002" });
+    return streamEndpoint(reply, (handlers, signal) => streamReview({ notes: request.body.notes, focus: request.body.focus?.trim() || void 0 }, handlers, void 0, signal), {
+      unavailable: (error) => error instanceof ReviewUnavailableError,
+      notConfigured: "\u8FD8\u6CA1\u6709\u914D\u7F6E\u6A21\u578B\u3002\u8BF7\u5148\u914D\u7F6E LLM\uFF0C\u8BE6\u89C1\u56DE\u987E\u9875\u7684\u63D0\u793A\u3002",
+      failed: "\u56DE\u987E\u751F\u6210\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002\u4F60\u7684\u7B14\u8BB0\u6CA1\u6709\u53D7\u5230\u5F71\u54CD\u3002"
+    });
+  });
+  app2.post("/api/review/run", {
+    bodyLimit: 256 * 1024,
+    schema: reviewSchema
   }, async (request, reply) => {
     const total = request.body.notes.reduce((sum, note) => sum + note.body.length + (note.title?.length || 0) + (note.quote?.length || 0), 0);
     if (total > REVIEW_MAX_TOTAL_CHARS) return reply.code(413).send({ message: "\u9009\u4E2D\u7684\u7B14\u8BB0\u592A\u957F\uFF0C\u8BF7\u7F29\u5C0F\u65F6\u95F4\u8303\u56F4\u3002" });
@@ -42505,22 +43008,57 @@ function buildApp() {
       active--;
     }
   });
-  app2.post("/api/ask/run", {
+  const askSchema = {
+    body: {
+      type: "object",
+      additionalProperties: false,
+      required: ["track"],
+      properties: {
+        track: { type: "object", additionalProperties: false, required: ["title"], properties: { title: { type: "string", maxLength: 160 }, artist: { type: "string", maxLength: 160, default: "" } } },
+        position: { type: "object", additionalProperties: false, properties: { seconds: { type: "number", minimum: 0, maximum: 36e3 }, section: { type: "string", maxLength: 40 } } },
+        quote: { type: "string", maxLength: 400, default: "" },
+        context: { type: "array", maxItems: 6, default: [], items: { type: "string", maxLength: 200 } },
+        draft: { type: "string", maxLength: 3e3, default: "" },
+        earlier: { type: "array", maxItems: 3, default: [], items: { type: "object", additionalProperties: false, required: ["body", "createdAt"], properties: { body: { type: "string", maxLength: 400 }, createdAt: { type: "string", maxLength: 40 } } } }
+      }
+    }
+  };
+  app2.post("/api/ask/stream", { bodyLimit: 64 * 1024, schema: askSchema }, async (request, reply) => streamEndpoint(
+    reply,
+    (handlers, signal) => streamAsk(request.body, handlers, void 0, signal),
+    {
+      unavailable: (error) => error instanceof AskUnavailableError,
+      notConfigured: "\u8FD8\u6CA1\u6709\u914D\u7F6E\u6A21\u578B\uFF0C\u6682\u65F6\u4E0D\u80FD\u63D0\u95EE\u3002",
+      failed: "\u8FD9\u6B21\u6CA1\u95EE\u51FA\u6765\uFF0C\u7A0D\u540E\u518D\u8BD5\u3002\u4F60\u7684\u7B14\u8BB0\u6CA1\u6709\u53D7\u5230\u5F71\u54CD\u3002"
+    }
+  ));
+  app2.post("/api/polish/stream", {
     bodyLimit: 64 * 1024,
     schema: {
       body: {
         type: "object",
         additionalProperties: false,
-        required: ["track"],
+        required: ["track", "draft"],
         properties: {
           track: { type: "object", additionalProperties: false, required: ["title"], properties: { title: { type: "string", maxLength: 160 }, artist: { type: "string", maxLength: 160, default: "" } } },
           quote: { type: "string", maxLength: 400, default: "" },
-          context: { type: "array", maxItems: 6, default: [], items: { type: "string", maxLength: 200 } },
-          draft: { type: "string", maxLength: 3e3, default: "" },
-          earlier: { type: "array", maxItems: 3, default: [], items: { type: "object", additionalProperties: false, required: ["body", "createdAt"], properties: { body: { type: "string", maxLength: 400 }, createdAt: { type: "string", maxLength: 40 } } } }
+          draft: { type: "string", minLength: 1, maxLength: POLISH_MAX_CHARS }
         }
       }
     }
+  }, async (request, reply) => streamEndpoint(
+    reply,
+    (handlers, signal) => streamPolish(request.body, handlers, void 0, signal),
+    {
+      unavailable: (error) => error instanceof PolishUnavailableError,
+      notConfigured: "\u8FD8\u6CA1\u6709\u914D\u7F6E\u6A21\u578B\uFF0C\u6682\u65F6\u4E0D\u80FD\u6574\u7406\u3002",
+      failed: "\u8FD9\u6B21\u6CA1\u6574\u7406\u51FA\u6765\uFF0C\u7A0D\u540E\u518D\u8BD5\u3002\u4F60\u7684\u539F\u6587\u6CA1\u6709\u53D7\u5230\u5F71\u54CD\u3002",
+      map: (error) => error instanceof Error && error.message === "POLISH_TOO_SHORT" ? "\u5199\u5F97\u8FD8\u4E0D\u591F\u591A\uFF0C\u518D\u5199\u51E0\u53E5\u518D\u6765\u6574\u7406\u5427\u3002" : null
+    }
+  ));
+  app2.post("/api/ask/run", {
+    bodyLimit: 64 * 1024,
+    schema: askSchema
   }, async (request, reply) => {
     if (Date.now() - windowStart > 6e4) {
       windowStart = Date.now();
@@ -42539,24 +43077,40 @@ function buildApp() {
       active--;
     }
   });
-  app2.post("/api/taste/run", {
-    bodyLimit: 64 * 1024,
-    schema: {
-      body: {
-        type: "object",
-        additionalProperties: false,
-        required: ["totalMinutes", "sessions", "topSongs", "topArtists", "byHour", "last14Days", "recent"],
-        properties: {
-          totalMinutes: { type: "number", minimum: 0 },
-          sessions: { type: "number", minimum: 0 },
-          topSongs: { type: "array", maxItems: 15, items: { type: "object", required: ["name"], properties: { name: { type: "string", maxLength: 100 }, artist: { type: "string", maxLength: 100, default: "" }, plays: { type: "number", default: 0 }, minutes: { type: "number", default: 0 } } } },
-          topArtists: { type: "array", maxItems: 12, items: { type: "object", required: ["name"], properties: { name: { type: "string", maxLength: 100 }, plays: { type: "number", default: 0 }, minutes: { type: "number", default: 0 } } } },
-          byHour: { type: "array", minItems: 24, maxItems: 24, items: { type: "number", minimum: 0 } },
-          last14Days: { type: "array", maxItems: 14, items: { type: "object", required: ["date"], properties: { date: { type: "string", maxLength: 12 }, minutes: { type: "number", default: 0 } } } },
-          recent: { type: "array", maxItems: 40, items: { type: "object", required: ["name", "at"], properties: { name: { type: "string", maxLength: 100 }, artist: { type: "string", maxLength: 100, default: "" }, at: { type: "string", maxLength: 20 }, listenMin: { type: "number", default: 0 }, completed: { type: "boolean", default: false } } } }
-        }
+  const tasteSchema = {
+    body: {
+      type: "object",
+      additionalProperties: false,
+      required: ["totalMinutes", "sessions", "topSongs", "topArtists", "byHour", "last14Days", "recent"],
+      properties: {
+        totalMinutes: { type: "number", minimum: 0 },
+        sessions: { type: "number", minimum: 0 },
+        topSongs: { type: "array", maxItems: 15, items: { type: "object", required: ["name"], properties: { name: { type: "string", maxLength: 100 }, artist: { type: "string", maxLength: 100, default: "" }, plays: { type: "number", default: 0 }, minutes: { type: "number", default: 0 } } } },
+        topArtists: { type: "array", maxItems: 12, items: { type: "object", required: ["name"], properties: { name: { type: "string", maxLength: 100 }, plays: { type: "number", default: 0 }, minutes: { type: "number", default: 0 } } } },
+        byHour: { type: "array", minItems: 24, maxItems: 24, items: { type: "number", minimum: 0 } },
+        last14Days: { type: "array", maxItems: 14, items: { type: "object", required: ["date"], properties: { date: { type: "string", maxLength: 12 }, minutes: { type: "number", default: 0 } } } },
+        recent: { type: "array", maxItems: 40, items: { type: "object", required: ["name", "at"], properties: { name: { type: "string", maxLength: 100 }, artist: { type: "string", maxLength: 100, default: "" }, at: { type: "string", maxLength: 20 }, listenMin: { type: "number", default: 0 }, completed: { type: "boolean", default: false } } } },
+        nightSongs: { type: "array", maxItems: 6, items: { type: "object", required: ["name"], properties: { name: { type: "string", maxLength: 100 }, artist: { type: "string", maxLength: 100, default: "" }, nightDays: { type: "number", default: 0 }, nights: { type: "number", default: 0 }, minutes: { type: "number", default: 0 }, plays: { type: "number", default: 0 } } } },
+        notes: { type: "object", additionalProperties: false, properties: {
+          totalNotes: { type: "number", minimum: 0, default: 0 },
+          mostWritten: { type: "array", maxItems: 6, items: { type: "object", required: ["name"], properties: { name: { type: "string", maxLength: 100 }, artist: { type: "string", maxLength: 100, default: "" }, notes: { type: "number", default: 0 }, plays: { type: "number", default: 0 }, minutes: { type: "number", default: 0 } } } },
+          listenedNotWritten: { type: "array", maxItems: 6, items: { type: "object", required: ["name"], properties: { name: { type: "string", maxLength: 100 }, artist: { type: "string", maxLength: 100, default: "" }, plays: { type: "number", default: 0 }, minutes: { type: "number", default: 0 } } } }
+        } }
       }
     }
+  };
+  app2.post("/api/taste/stream", { bodyLimit: 64 * 1024, schema: tasteSchema }, async (request, reply) => streamEndpoint(
+    reply,
+    (handlers, signal) => streamTaste(request.body, handlers, void 0, signal),
+    {
+      unavailable: (error) => error instanceof TasteUnavailableError,
+      notConfigured: "\u8FD8\u6CA1\u6709\u914D\u7F6E\u6A21\u578B\uFF0C\u6682\u65F6\u4E0D\u80FD\u5206\u6790\u3002",
+      failed: "\u8FD9\u6B21\u6CA1\u5206\u6790\u51FA\u6765\uFF0C\u7A0D\u540E\u518D\u8BD5\u3002"
+    }
+  ));
+  app2.post("/api/taste/run", {
+    bodyLimit: 64 * 1024,
+    schema: tasteSchema
   }, async (request, reply) => {
     if (Date.now() - windowStart > 6e4) {
       windowStart = Date.now();
@@ -42574,6 +43128,22 @@ function buildApp() {
     } finally {
       active--;
     }
+  });
+  app2.post("/api/reading/stream", {
+    bodyLimit: 128 * 1024,
+    schema: { body: { type: "object", additionalProperties: false, required: ["lines"], properties: {
+      track: { type: "object", additionalProperties: false, default: {}, properties: { title: { type: "string", maxLength: 120, default: "" }, artist: { type: "string", maxLength: 120, default: "" } } },
+      lines: { type: "array", minItems: 1, maxItems: READING_MAX_LINES, items: { type: "string", minLength: 1, maxLength: 200 } }
+    } } }
+  }, async (request, reply) => {
+    const total = request.body.lines.reduce((sum, line) => sum + line.length, 0);
+    if (total > 12e3) return reply.code(413).send({ message: "\u6B4C\u8BCD\u592A\u957F\uFF0C\u6682\u65F6\u6CA1\u6CD5\u9010\u53E5\u89E3\u8BFB\u3002" });
+    const track = { title: request.body.track?.title ?? "", artist: request.body.track?.artist ?? "" };
+    return streamEndpoint(reply, (handlers, signal) => streamReading({ track, lines: request.body.lines }, handlers, void 0, signal), {
+      unavailable: (error) => error instanceof ReadingUnavailableError,
+      notConfigured: "\u8FD8\u6CA1\u6709\u914D\u7F6E\u6A21\u578B\uFF0C\u6682\u65F6\u4E0D\u80FD\u89E3\u8BFB\u6B4C\u8BCD\u3002",
+      failed: "\u8FD9\u6B21\u6CA1\u89E3\u8BFB\u51FA\u6765\uFF0C\u7A0D\u540E\u518D\u8BD5\u3002"
+    });
   });
   app2.setErrorHandler((error, _request, reply) => {
     const code = error && typeof error === "object" && "statusCode" in error ? error.statusCode : void 0;

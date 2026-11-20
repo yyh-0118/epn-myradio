@@ -4670,6 +4670,11 @@ async function proxyAfterglowApi(req, res, pathname) {
     '/afterglow-api/taste/run': { method: 'POST', target: '/api/taste/run', timeout: 58000, maxBody: 64 * 1024 },
     '/afterglow-api/ask/run': { method: 'POST', target: '/api/ask/run', timeout: 58000, maxBody: 64 * 1024 },
     '/afterglow-api/review/run': { method: 'POST', target: '/api/review/run', timeout: 58000, maxBody: 256 * 1024 },
+    '/afterglow-api/review/stream': { method: 'POST', target: '/api/review/stream', timeout: 90000, maxBody: 256 * 1024, stream: true },
+    '/afterglow-api/ask/stream': { method: 'POST', target: '/api/ask/stream', timeout: 90000, maxBody: 64 * 1024, stream: true },
+    '/afterglow-api/taste/stream': { method: 'POST', target: '/api/taste/stream', timeout: 90000, maxBody: 64 * 1024, stream: true },
+    '/afterglow-api/reading/stream': { method: 'POST', target: '/api/reading/stream', timeout: 90000, maxBody: 128 * 1024, stream: true },
+    '/afterglow-api/polish/stream': { method: 'POST', target: '/api/polish/stream', timeout: 90000, maxBody: 64 * 1024, stream: true },
   };
   const route = routes[pathname];
   if (!route) { sendAfterglowJSON(res, { ok: false, error: 'AFTERGLOW_ROUTE_NOT_FOUND' }, 404); return; }
@@ -4702,21 +4707,33 @@ async function proxyAfterglowApi(req, res, pathname) {
       host: '127.0.0.1', port, path: route.target, method: route.method,
       headers: {
         'x-afterglow-token': token,
-        accept: 'application/json',
+        accept: route.stream ? 'text/event-stream' : 'application/json',
         ...(route.method === 'POST' ? { 'content-type': 'application/json', 'content-length': String(body.length) } : {}),
       },
       timeout: route.timeout,
     }, (upstreamResponse) => {
       if (replied) { upstreamResponse.resume(); return; }
       replied = true;
-      res.writeHead(upstreamResponse.statusCode || 502, {
+      if (!route.stream) res.writeHead(upstreamResponse.statusCode || 502, {
         'Content-Type': String(upstreamResponse.headers['content-type'] || 'application/json; charset=utf-8'),
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
       });
+      if (route.stream) {
+        res.removeHeader('Content-Length');
+        res.writeHead(upstreamResponse.statusCode || 502, {
+          'Content-Type': String(upstreamResponse.headers['content-type'] || 'text/event-stream; charset=utf-8'),
+          'Cache-Control': 'no-store, no-transform',
+          'X-Accel-Buffering': 'no',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        if (res.flushHeaders) res.flushHeaders();
+        if (res.socket && res.socket.setNoDelay) res.socket.setNoDelay(true);
+      }
       upstreamResponse.pipe(res);
       upstreamResponse.once('end', resolve);
       upstreamResponse.once('error', () => { if (!res.writableEnded) res.end(); resolve(); });
+      res.once('close', () => { if (!upstreamResponse.complete) upstreamResponse.destroy(); resolve(); });
     });
     upstream.on('timeout', () => upstream.destroy(Object.assign(new Error('AFTERGLOW_TIMEOUT'), { code: 'AFTERGLOW_TIMEOUT' })));
     upstream.on('error', (error) => finish(error && error.code === 'AFTERGLOW_TIMEOUT' ? 504 : 502, {

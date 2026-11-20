@@ -2,7 +2,7 @@ var HOME_LISTEN_ROLLUP_V2_KEY = 'mineradio-listen-rollup-v2';
 var listenSessionSerial = 0;
 
 function emptyListenRollupV2() {
-  return { version: 2, totalListenMs: 0, sessions: 0, daily: {}, updatedAt: 0 };
+  return { version: 2, totalListenMs: 0, sessions: 0, daily: {}, hours: new Array(24).fill(0), updatedAt: 0 };
 }
 function loadListenRollupV2() {
   try {
@@ -14,6 +14,7 @@ function loadListenRollupV2() {
       totalListenMs: Math.max(0, Number(data.totalListenMs) || 0),
       sessions: Math.max(0, Number(data.sessions) || 0),
       daily: data.daily && typeof data.daily === 'object' ? data.daily : {},
+      hours: Array.isArray(data.hours) && data.hours.length === 24 ? data.hours.map(function (ms) { return Math.max(0, Number(ms) || 0); }) : new Array(24).fill(0),
       updatedAt: Number(data.updatedAt) || 0,
     };
   } catch (e) {
@@ -41,6 +42,8 @@ function recordListenRollupV2(record) {
     day.sessions = Math.max(0, Number(day.sessions) || 0) + 1;
     day.completed = Math.max(0, Number(day.completed) || 0) + (record && record.completed ? 1 : 0);
     state.daily[dayKey] = day;
+    var startedAt = Number(record && (record.startedAt || record.playedAt)) || Date.now();
+    state.hours[new Date(startedAt).getHours()] += listenMs;
     state.updatedAt = Date.now();
     localStorage.setItem(HOME_LISTEN_ROLLUP_V2_KEY, JSON.stringify(state));
   } catch (e) { }
@@ -140,16 +143,17 @@ function reportListenSession(record, session, durationMs) {
 function loadListenStatsState() {
   try {
     var raw = localStorage.getItem(HOME_LISTEN_STATS_KEY);
-    if (!raw) return { history: [], songs: {}, artists: {}, updatedAt: 0 };
+    if (!raw) return { history: [], songs: {}, artists: {}, nightSince: 0, updatedAt: 0 };
     var data = JSON.parse(raw);
     return {
       history: Array.isArray(data.history) ? data.history.slice(0, 180) : [],
       songs: data.songs && typeof data.songs === 'object' ? data.songs : {},
       artists: data.artists && typeof data.artists === 'object' ? data.artists : {},
+      nightSince: Number(data.nightSince) || 0,
       updatedAt: Number(data.updatedAt) || 0,
     };
   } catch (e) {
-    return { history: [], songs: {}, artists: {}, updatedAt: 0 };
+    return { history: [], songs: {}, artists: {}, nightSince: 0, updatedAt: 0 };
   }
 }
 function saveListenStatsState() {
@@ -254,6 +258,7 @@ function finalizeListenSession(completed) {
     cover: snap.cover || '',
     source: snap.source || '',
     playedAt: now,
+    startedAt: session.startedAt || now,
     listenMs: Math.round(session.listenMs),
     completed: !!completed,
     context: session.context || null,
@@ -268,6 +273,8 @@ function finalizeListenSession(completed) {
   songStat.listenMs += record.listenMs;
   songStat.completed += completed ? 1 : 0;
   songStat.lastPlayedAt = now;
+  if (!listenStatsState.nightSince) listenStatsState.nightSince = now;
+  if (typeof listenRecordNight === 'function') listenRecordNight(songStat, record.startedAt, record.listenMs);
   listenStatsState.songs[record.key] = songStat;
   String(record.artist || '').split(/\s*\/\s*|\s*,\s*|、|&/).forEach(function (name) {
     name = name.trim();

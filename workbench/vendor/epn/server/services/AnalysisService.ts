@@ -418,6 +418,7 @@ export class AnalysisService {
         ),
         temperature: serverEnv.llmTemperature,
         maxTokens: serverEnv.llmMaxTokens,
+        disableThinking: true,
       });
 
       diagnostics.push({
@@ -1208,7 +1209,9 @@ Rules:
 11. Do not invent lines that are not present in the source lyrics.
 12. If the final rhymeAnalysis only contains end-position units, add a warning explaining that middle/internal rhymes were not confidently found.
 13. If you reject or correct a supplied candidate, keep the final rhymeAnalysis clean and record the reason in rhymeAdjudication.decisions.
-14. Return JSON only.
+14. For each entry in lines, "emotion" is a short Chinese mood word (at most 6 characters). "note" is a one-sentence Chinese reading of what the line says or implies (at most 30 characters), based only on the lyric text; it is NOT a rhyme note. Write a note only for lines with clear imagery, a turn, or a key idea, at most 12 lines in total, and leave note empty for all other lines. Do not invent the singer's biography or the story behind the song.
+15. insights.evidenceLineIndexes must be zero-based indexes of lines that actually support the insight, at most 4 per insight.
+16. Return JSON only.
 
 Input JSON:
 ${JSON.stringify(inputPayload, null, 2)}`,

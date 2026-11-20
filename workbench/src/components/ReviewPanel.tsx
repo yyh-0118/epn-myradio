@@ -1,10 +1,14 @@
-import { BookMarked, History, LoaderCircle, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
+import { BookMarked, History, LoaderCircle, RefreshCw, ShieldAlert, Square, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { readSse } from '../lib/sse';
+import { stripAskLines } from '../lib/writing';
 import { REVIEW_RANGES, addReviewRecord, clearReviewHistory, deleteReviewRecord, readConsent, readReviewHistory, reviewNudge, selectReviewNotes, writeConsent } from '../lib/review-store';
 import type { Moment, ReviewRangeId, ReviewRecord, ReviewResult } from '../types';
 
 const apiPrefix = new URLSearchParams(window.location.search).get('host') === 'mineradio' ? '/afterglow-api' : '/api';
 const dateText = (iso: string) => new Date(iso).toLocaleDateString('zh-CN');
+const IDLE_MS = 60_000;
+type Live = { text: string; thinking: boolean; range: string; focus: string; startedAt: number };
 
 export function ReviewPanel({ moments, onOpen }: { moments: Moment[]; onOpen: (id: string) => void }) {
   const [range, setRange] = useState<ReviewRangeId>('30');
@@ -16,6 +20,7 @@ export function ReviewPanel({ moments, onOpen }: { moments: Moment[]; onOpen: (i
   const [history, setHistory] = useState<ReviewRecord[]>(() => readReviewHistory());
   const [shown, setShown] = useState<ReviewRecord | null>(() => readReviewHistory()[0] ?? null);
   const [llmReady, setLlmReady] = useState<boolean | null>(null);
+  const [live, setLive] = useState<Live | null>(null);
   const controller = useRef<AbortController | null>(null);
   const days = REVIEW_RANGES.find((item) => item.id === range)!.days;
   const { picked: notes, eligible } = useMemo(() => selectReviewNotes(moments, days), [moments, days]);
@@ -36,30 +41,53 @@ export function ReviewPanel({ moments, onOpen }: { moments: Moment[]; onOpen: (i
     controller.current?.abort();
     const abort = new AbortController(); controller.current = abort;
     const usedNotes = notes; const usedRange = REVIEW_RANGES.find((item) => item.id === range)!; const usedFocus = focus.trim();
+    let idleTimer: ReturnType<typeof setTimeout> | undefined; let idled = false;
+    const touch = () => { if (idleTimer) clearTimeout(idleTimer); idleTimer = setTimeout(() => { idled = true; abort.abort(); }, IDLE_MS); };
     setBusy(true); setError(''); setNotice('');
+    setLive({ text: '', thinking: false, range: usedRange.label, focus: usedFocus, startedAt: Date.now() });
+    let finished: ReviewResult | null = null; let failure = '';
     try {
-      const response = await fetch(`${apiPrefix}/review/run`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(60_000)]),
+      touch();
+      const response = await fetch(`${apiPrefix}/review/stream`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, signal: abort.signal,
         body: JSON.stringify({
           focus: usedFocus || undefined,
-          notes: usedNotes.map((note) => ({ id: note.id, title: note.title, body: note.body.slice(0, 4000), quote: note.quote.slice(0, 400), trackTitle: note.trackTitle, artist: note.artist, createdAt: note.createdAt })),
+          notes: usedNotes.map((note) => ({ id: note.id, title: note.title, body: stripAskLines(note.body).slice(0, 4000), quote: note.quote.slice(0, 400), trackTitle: note.trackTitle, artist: note.artist, createdAt: note.createdAt })),
         }),
       });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.message || '回顾生成失败，请稍后重试。');
-      if (abort.signal.aborted) return;
+      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.message || '回顾生成失败，请稍后重试。'); }
+      await readSse(response, (message) => {
+        let payload: { text?: string; message?: string } & Partial<ReviewResult> = {};
+        try { payload = message.data ? JSON.parse(message.data) : {}; } catch { return; }
+        if (message.event === 'text' && payload.text) setLive((current) => current && ({ ...current, text: current.text + payload.text, thinking: false }));
+        else if (message.event === 'thinking') setLive((current) => current && ({ ...current, thinking: current.text.length === 0 }));
+        else if (message.event === 'done') finished = payload as ReviewResult;
+        else if (message.event === 'error') failure = payload.message || '回顾生成失败，请稍后重试。';
+      }, touch);
+      if (failure) throw new Error(failure);
+      if (!finished) throw new Error('回顾没有完整返回，请重试。你的笔记没有受到影响。');
+      const body = finished as ReviewResult;
       const data: ReviewResult = { ...body, moods: Array.isArray(body.moods) ? body.moods : [], warnings: Array.isArray(body.warnings) ? body.warnings : [] };
       const record: ReviewRecord = {
         id: crypto.randomUUID(), createdAt: new Date().toISOString(), rangeId: usedRange.id, rangeLabel: usedRange.label, focus: usedFocus, data,
         refs: Object.fromEntries(usedNotes.map((note) => [note.id, { createdAt: note.createdAt, trackTitle: note.trackTitle }])),
       };
       const saved = addReviewRecord(record);
-      setHistory(saved.list); setShown(record);
+      setHistory(saved.list); setShown(record); setLive(null);
       if (!saved.saved) setNotice('这份回顾没能保存到本机历史，离开此页后会消失。');
     } catch (reason) {
-      if (!abort.signal.aborted) setError(reason instanceof Error && reason.name !== 'TimeoutError' && reason.name !== 'SyntaxError' && reason.name !== 'TypeError' ? reason.message : '回顾超时或服务未启动。笔记没有受到影响，请稍后重试。');
-    } finally { if (!abort.signal.aborted) setBusy(false); }
+      if (idled) { setError('模型 60 秒没有返回新内容，已停止。笔记没有受到影响，可以重试。'); setLive(null); }
+      else if (!abort.signal.aborted) {
+        setError(reason instanceof Error && reason.name !== 'SyntaxError' && reason.name !== 'TypeError' ? reason.message : '回顾服务未启动或连接中断。笔记没有受到影响，请稍后重试。');
+        setLive(null);
+      }
+    } finally {
+      if (idleTimer) clearTimeout(idleTimer);
+      if (controller.current === abort) { setBusy(false); if (abort.signal.aborted && !idled) setLive((current) => current && current.text ? current : null); }
+    }
   }
+
+  function stop() { controller.current?.abort(); setNotice('已停止。这次的内容没有保存。'); }
 
   function removeRecord(id: string) {
     const list = deleteReviewRecord(id);
@@ -95,7 +123,9 @@ export function ReviewPanel({ moments, onOpen }: { moments: Moment[]; onOpen: (i
       <div className="review-ranges" role="radiogroup" aria-label="回顾范围">{REVIEW_RANGES.map((item) => <button key={item.id} role="radio" aria-checked={range === item.id} className={range === item.id ? 'active' : ''} onClick={() => setRange(item.id)}>{item.label}</button>)}</div>
       <input aria-label="这次想关注什么（可选）" value={focus} maxLength={200} onChange={(event) => setFocus(event.target.value)} placeholder="这次想关注什么？比如：最近为什么总听同一首歌（可不填）" />
       <label className="review-consent"><input type="checkbox" checked={consent} onChange={(event) => toggleConsent(event.target.checked)} /><span><b>允许 AI 读取我的笔记</b><small>授权后，点下面的按钮才会把所选笔记发给你配置的模型，随时可关闭。关闭时，「问我一句」也不会附带这首歌的旧笔记。</small></span></label>
-      <button className="review-run" disabled={busy || !consent || !notes.length || llmReady === false} onClick={() => void run()} title={consent ? undefined : '请先勾选“允许 AI 读取我的笔记”'}>{busy ? <LoaderCircle className="spinner" size={15} /> : shown ? <RefreshCw size={15} /> : <BookMarked size={15} />}{busy ? '正在读你的笔记…' : shown ? '重新生成' : `读这 ${notes.length} 条笔记`}</button>
+      {busy
+        ? <button className="review-run review-stop" onClick={stop}><Square size={13} fill="currentColor" />停止</button>
+        : <button className="review-run" disabled={!consent || !notes.length || llmReady === false} onClick={() => void run()} title={consent ? undefined : '请先勾选“允许 AI 读取我的笔记”'}>{shown ? <RefreshCw size={15} /> : <BookMarked size={15} />}{shown ? '重新生成' : `读这 ${notes.length} 条笔记`}</button>}
     </div>
     <div className="review-privacy"><ShieldAlert size={14} /><p>点击后，所选笔记的正文、标题、关联歌词、歌名与歌手会发送到你配置的模型服务；不会发送音乐账户信息或音频地址。只有主动点击才会发送。生成的回顾只保存在本机，可在下方历史里逐条删除。</p></div>
     {llmReady === false && <div className="review-setup" role="status"><b>还没有配置模型</b><p>在应用数据目录创建 <code>afterglow-llm.json</code>：<code>{'{"apiUrl":"https://…/chat/completions","apiKey":"…","model":"…"}'}</code>，然后重启应用。macOS 路径：<code>~/Library/Application Support/Mineradio Afterglow/</code>。</p><p>想让笔记完全不出本机，可以用本地模型（如 Ollama）：<code>{'{"apiUrl":"http://127.0.0.1:11434/v1/chat/completions","apiKey":"","model":"你拉取的模型名"}'}</code>，apiKey 可留空，仅支持本机回环地址的 http。</p></div>}
@@ -103,7 +133,12 @@ export function ReviewPanel({ moments, onOpen }: { moments: Moment[]; onOpen: (i
     {eligible > notes.length && <p className="review-empty">这个范围有 {eligible} 条笔记，一次最多读取最新的 {notes.length} 条。想看更早的，可以缩小范围分段回顾。</p>}
     {error && <p className="review-error" role="alert">{error}</p>}
     {notice && <p className="review-error" role="status">{notice}</p>}
-    {shown && <article className="review-result">
+    {live && <article className="review-result review-live" aria-live="polite" aria-busy={busy}>
+      <header><span>基于 {live.range}{live.focus ? ` · 关注：${live.focus}` : ''}</span><span>{live.text ? '正在写…' : live.thinking ? '正在想…' : '正在读你的笔记…'}</span></header>
+      {live.text ? <p className="review-overview">{live.text}<i className="typing-caret" aria-hidden="true" /></p> : <p className="review-thinking"><LoaderCircle className="spinner" size={14} />{live.thinking ? '模型在思考，马上开始写' : '正在把笔记交给模型'}</p>}
+      <small>主题、心情线索和引用会在正文写完后补上，每条引用都会对照你的笔记校验。</small>
+    </article>}
+    {shown && !live && <article className="review-result">
       <header><span>基于 {shown.rangeLabel} · {shown.data.noteCount} 条笔记{shown.focus ? ` · 关注：${shown.focus}` : ''}</span><span>{new Date(shown.createdAt).toLocaleString('zh-CN')}</span></header>
       {shown.data.overview && <p className="review-overview">{shown.data.overview}</p>}
       {moodItems.length > 0 && <section className="review-moods"><h3>心情线索</h3><ol>{moodItems.map((item) => {

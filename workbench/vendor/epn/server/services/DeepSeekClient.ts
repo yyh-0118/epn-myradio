@@ -12,6 +12,8 @@ export interface DeepSeekCompleteJsonInput {
   signal?: AbortSignal;
   temperature?: number;
   maxTokens?: number;
+  /** 结构化 JSON 任务不需要推理；推理模型会把输出额度耗尽而正文为空。仅对 DeepSeek 官方接口生效。 */
+  disableThinking?: boolean;
 }
 
 export interface DeepSeekStreamTextInput {
@@ -36,13 +38,85 @@ interface DeepSeekStreamChunk {
     finish_reason?: string | null;
     delta?: {
       content?: string | null;
+      reasoning_content?: string | null;
     };
   }>;
+}
+
+export interface DeepSeekStreamChatInput {
+  messages: LlmChatMessage[];
+  signal?: AbortSignal;
+  temperature?: number;
+  maxTokens?: number;
+  idleTimeoutMs?: number;
+  /** 轻量的结构化任务不需要推理，关掉可以更快出字。仅对 DeepSeek 官方接口生效。 */
+  disableThinking?: boolean;
+  onContent: (content: string) => void;
+  onThinking?: () => void;
 }
 
 export class DeepSeekClient {
   get isConfigured(): boolean {
     return Boolean(serverEnv.llmApiUrl && serverEnv.llmModel);
+  }
+
+  /**
+   * 流式对话：只要上游持续有分片就不会超时，idleTimeoutMs 内没有任何分片才判定失败。
+   * 推理模型的思考阶段通过 onThinking 通知，正文通过 onContent 逐段回调。
+   */
+  async streamChat(input: DeepSeekStreamChatInput): Promise<{ finishReason: string | null }> {
+    const idleMs = input.idleTimeoutMs ?? 60_000;
+    const idle = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => idle.abort(new Error("LLM 长时间没有返回内容，已中止。")), idleMs);
+    };
+    const signal = input.signal ? AbortSignal.any([input.signal, idle.signal]) : idle.signal;
+    arm();
+    let finishReason: string | null = null;
+    try {
+      const response = await this.postRawCompletion({
+        messages: input.messages,
+        signal,
+        stream: true,
+        temperature: input.temperature,
+        maxTokens: input.maxTokens,
+        noTimeout: true,
+        disableThinking: input.disableThinking,
+      });
+      if (!response.body) throw new Error("LLM stream response body is empty.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let thinking = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        arm();
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const chunk = parseStreamChunk(line);
+          if (chunk === "done") return { finishReason };
+          if (!chunk) continue;
+          const choice = chunk.choices?.[0];
+          if (choice?.finish_reason) finishReason = choice.finish_reason;
+          if (choice?.delta?.reasoning_content && !thinking) { thinking = true; input.onThinking?.(); }
+          const content = choice?.delta?.content;
+          if (content) input.onContent(content);
+        }
+      }
+      return { finishReason };
+    } catch (error) {
+      if (idle.signal.aborted && !input.signal?.aborted) {
+        throw idle.signal.reason instanceof Error ? idle.signal.reason : new Error("LLM 长时间没有返回内容，已中止。");
+      }
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async completeJson<TJson>(input: DeepSeekCompleteJsonInput): Promise<TJson> {
@@ -52,6 +126,7 @@ export class DeepSeekClient {
       stream: false,
       temperature: input.temperature,
       maxTokens: input.maxTokens,
+      disableThinking: input.disableThinking,
       responseFormat: {
         type: "json_object",
       },
@@ -124,6 +199,7 @@ export class DeepSeekClient {
     temperature?: number;
     maxTokens?: number;
     responseFormat?: { type: "json_object" };
+    disableThinking?: boolean;
   }): Promise<TResponse> {
     const response = await this.postRawCompletion(input);
 
@@ -137,6 +213,8 @@ export class DeepSeekClient {
     temperature?: number;
     maxTokens?: number;
     responseFormat?: { type: "json_object" };
+    noTimeout?: boolean;
+    disableThinking?: boolean;
   }): Promise<Response> {
     this.assertConfigured();
 
@@ -148,6 +226,12 @@ export class DeepSeekClient {
       headers.Authorization = `Bearer ${serverEnv.llmApiKey}`;
     }
 
+    const signal = input.noTimeout
+      ? input.signal
+      : input.signal
+        ? AbortSignal.any([input.signal, AbortSignal.timeout(45_000)])
+        : AbortSignal.timeout(45_000);
+
     const response = await fetch(serverEnv.llmApiUrl, {
       method: "POST",
       headers,
@@ -158,10 +242,9 @@ export class DeepSeekClient {
         temperature: input.temperature ?? serverEnv.llmTemperature,
         max_tokens: input.maxTokens ?? serverEnv.llmMaxTokens,
         ...(input.responseFormat ? { response_format: input.responseFormat } : {}),
+        ...(input.disableThinking && isDeepSeekHost(serverEnv.llmApiUrl) ? { thinking: { type: "disabled" } } : {}),
       }),
-      signal: input.signal
-        ? AbortSignal.any([input.signal, AbortSignal.timeout(45_000)])
-        : AbortSignal.timeout(45_000),
+      signal,
     });
 
     if (!response.ok) {
@@ -177,6 +260,23 @@ export class DeepSeekClient {
     if (!this.isConfigured) {
       throw new Error("LLM \u914D\u7F6E\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u68C0\u67E5 LLM_PROXY_URL\u3001LLM_API_URL \u548C LLM_MODEL\u3002");
     }
+  }
+}
+
+function isDeepSeekHost(url: string): boolean {
+  try { return new URL(url).hostname.endsWith("deepseek.com"); } catch { return false; }
+}
+
+function parseStreamChunk(line: string): DeepSeekStreamChunk | "done" | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("data:")) return null;
+  const data = trimmed.slice(5).trim();
+  if (!data) return null;
+  if (data === "[DONE]") return "done";
+  try {
+    return JSON.parse(data) as DeepSeekStreamChunk;
+  } catch {
+    return null;
   }
 }
 

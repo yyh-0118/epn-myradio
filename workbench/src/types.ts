@@ -43,9 +43,11 @@ export interface AnalysisResult {
   units: RhymeUnit[];
   groups: { id: string; label: string; description: string }[];
   metrics: { energy: number; melancholy: number; narrativeTension: number };
-  bars: { energy: number; tension: number }[];
+  /** 与 lines 一一对应；emotion / note 只在模型参与分析时才有。 */
+  bars: { energy: number; tension: number; emotion?: string; note?: string }[];
   warnings: string[];
-  insights: { title: string; body: string }[];
+  /** evidence 是依据的歌词行下标（从 0 起），指向 lines。 */
+  insights: { title: string; body: string; evidence?: number[] }[];
   steps: { kind: string; status: string }[];
 }
 export interface ReviewNoteInput { id: string; title: string; body: string; quote: string; trackTitle: string; artist: string; createdAt: string }
@@ -71,12 +73,19 @@ export interface ReviewRecord {
 }
 export interface AskInput {
   track: { title: string; artist: string };
+  position?: { seconds?: number; section?: string };
   quote: string;
   context: string[];
   draft: string;
   earlier: { body: string; createdAt: string }[];
 }
 export interface AskResult { question: string }
+export interface PolishInput {
+  track: { title: string; artist: string };
+  quote: string;
+  draft: string;
+}
+export interface PolishResult { text: string; warnings: string[] }
 export interface TasteInput {
   totalMinutes: number;
   sessions: number;
@@ -85,5 +94,18 @@ export interface TasteInput {
   byHour: number[];
   last14Days: { date: string; minutes: number }[];
   recent: { name: string; artist: string; at: string; listenMin: number; completed: boolean }[];
+  /** 23 点到凌晨 5 点，在不同夜晚被反复听到的歌。 */
+  nightSongs?: { name: string; artist: string; nightDays: number; nights: number; minutes: number; plays: number }[];
+  /** 听歌与笔记的对照，只含条数，不含笔记内容；用户未授权时不会出现。 */
+  notes?: {
+    totalNotes: number;
+    mostWritten: { name: string; artist: string; notes: number; plays: number; minutes: number }[];
+    listenedNotWritten: { name: string; artist: string; plays: number; minutes: number }[];
+  };
 }
 export interface TasteResult { summary: string; points: { title: string; body: string }[]; hint: string }
+
+export interface ReadingInput { track: { title: string; artist: string }; lines: string[] }
+export interface LineReading { index: number; emotion: string; note: string }
+export interface ReadingInsight { title: string; body: string; lines: number[] }
+export interface ReadingResult { lines: LineReading[]; insights: ReadingInsight[]; warnings: string[] }

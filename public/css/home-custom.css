@@ -95,3 +95,11 @@
 
 /* 新手指引期间隐藏右下角的「记录此刻」条，避免层级更高而盖住提示框 */
 body.visual-guide-active #afterglow-capture-dock { opacity: 0 !important; pointer-events: none !important; }
+.hs-wait { opacity: .6; font-size: 12px; }
+.hs-caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -.15em; background: currentColor; animation: hs-caret-blink 1s steps(1) infinite; }
+@keyframes hs-caret-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .hs-caret { animation: none; } }
+.hs-stop { background: transparent; }
+#hs-insights .hs-sub { margin: 10px 0 6px; font-size: 11px; opacity: .65; }
+#hs-insights .hs-gap { margin-top: 22px; }
+#hs-insights .hs-empty { margin: 4px 0 0; }

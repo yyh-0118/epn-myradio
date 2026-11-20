@@ -100,7 +100,7 @@ test('Mineradio host captures current lyric without sharing account secrets', as
   await frame.getByRole('button', { name: '瞬间' }).click();
   await expect(frame.locator('.library-grid')).toContainText('另一个以后');
   await frame.getByRole('button', { name: '分析' }).click();
-  await expect(frame.locator('.analysis-scaffold')).toContainText('EPN 服务暂时不可用');
+  await expect(frame.locator('.analysis-scaffold')).toContainText('EPN 暂不可用');
   await page.screenshot({ path: 'test-results/fusion-workbench.png', fullPage: true, animations: 'disabled' });
   const messages = await page.evaluate(() => {
     const frame = document.querySelector<HTMLIFrameElement>('#afterglow-workbench-frame');

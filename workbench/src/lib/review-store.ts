@@ -1,4 +1,5 @@
 import type { Moment, ReviewRangeId, ReviewRecord, ReviewResult } from '../types';
+import { stripAskLines } from './writing';
 
 export const REVIEW_MAX_NOTES = 60;
 export const REVIEW_MAX_TOTAL_CHARS = 30000;
@@ -26,12 +27,12 @@ function defaultStore(): KeyValueStore | null {
 export function selectReviewNotes(moments: Moment[], days: number, now = Date.now()) {
   const since = days ? now - days * DAY : 0;
   const eligible = [...moments]
-    .filter((moment) => moment.body.trim() && !(Date.parse(moment.createdAt) < since))
+    .filter((moment) => stripAskLines(moment.body) && !(Date.parse(moment.createdAt) < since))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const picked: Moment[] = [];
   let total = 0;
   for (const moment of eligible) {
-    const size = Math.min(moment.body.length, 4000) + moment.title.length + Math.min(moment.quote.length, 400);
+    const size = Math.min(stripAskLines(moment.body).length, 4000) + moment.title.length + Math.min(moment.quote.length, 400);
     if (picked.length >= REVIEW_MAX_NOTES || total + size > REVIEW_MAX_TOTAL_CHARS) break;
     picked.push(moment);
     total += size;
@@ -97,7 +98,7 @@ export function clearReviewHistory(store: KeyValueStore | null = defaultStore())
 }
 
 export function reviewNudge(moments: Moment[], history: ReviewRecord[], now = Date.now()) {
-  const recentCount = moments.filter((moment) => moment.body.trim() && now - Date.parse(moment.createdAt) <= REVIEW_NUDGE_DAYS * DAY).length;
+  const recentCount = moments.filter((moment) => stripAskLines(moment.body) && now - Date.parse(moment.createdAt) <= REVIEW_NUDGE_DAYS * DAY).length;
   const last = history[0] ? Date.parse(history[0].createdAt) : NaN;
   const daysSince = Number.isFinite(last) ? Math.floor((now - last) / DAY) : null;
   return { recentCount, daysSince, due: recentCount >= REVIEW_NUDGE_MIN_NOTES && (daysSince === null || daysSince >= REVIEW_NUDGE_DAYS) };
@@ -118,7 +119,7 @@ export function describeAgo(iso: string, now = Date.now()) {
 
 export function earlierNotesForTrack(moments: Moment[], trackId: string, excludeId = '', limit = 2) {
   const matches = moments
-    .filter((moment) => moment.trackId === trackId && moment.id !== excludeId && moment.body.trim())
+    .filter((moment) => moment.trackId === trackId && moment.id !== excludeId && stripAskLines(moment.body))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return { notes: matches.slice(0, limit), total: matches.length };
 }

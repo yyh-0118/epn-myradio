@@ -56,6 +56,7 @@
     'js/modules/05-playback/00-api-quality-output.js',
     'js/modules/05-playback/01-cover-custom-map.js',
     'js/modules/05-playback/02-listen-stats.js',
+    'js/modules/05-playback/02b-listen-insights.js',
     'js/modules/05-playback/03-home-discover-weather.js',
     'js/modules/05-playback/03a-home-dashboard.js',
     'js/modules/05-playback/03b-home-custom.js',
