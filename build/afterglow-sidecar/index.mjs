@@ -39210,6 +39210,7 @@ var DeepSeekClient = class {
       temperature: input.temperature,
       maxTokens: input.maxTokens,
       disableThinking: input.disableThinking,
+      timeoutMs: input.timeoutMs,
       responseFormat: {
         type: "json_object"
       }
@@ -39272,7 +39273,8 @@ var DeepSeekClient = class {
     if (serverEnv.llmApiKey) {
       headers.Authorization = `Bearer ${serverEnv.llmApiKey}`;
     }
-    const signal = input.noTimeout ? input.signal : input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(45e3)]) : AbortSignal.timeout(45e3);
+    const timeoutMs = input.timeoutMs ?? 45e3;
+    const signal = input.noTimeout ? input.signal : input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
     const response = await fetch(serverEnv.llmApiUrl, {
       method: "POST",
       headers,
@@ -41301,8 +41303,9 @@ var AnalysisService = class {
           rhymeCandidateScan
         ),
         temperature: serverEnv.llmTemperature,
-        maxTokens: serverEnv.llmMaxTokens,
-        disableThinking: true
+        maxTokens: estimateAnalysisMaxTokens(lines.length, serverEnv.llmMaxTokens),
+        disableThinking: true,
+        timeoutMs: ANALYSIS_TIMEOUT_MS
       });
       diagnostics.push({
         id: createId3("diagnostic"),
@@ -42101,6 +42104,11 @@ function isMultiSyllableRhymeUnit(unit) {
   }
   const text = normalizeString(unit.text);
   return /[一-鿿]/.test(text) ? text.length >= 2 : text.split(/\s+/).filter(Boolean).length >= 2;
+}
+var ANALYSIS_TIMEOUT_MS = 12e4;
+function estimateAnalysisMaxTokens(lineCount, configured) {
+  const needed = 2500 + Math.max(1, lineCount) * 300;
+  return Math.max(configured, Math.min(16e3, needed));
 }
 function createDraftLineMap(lines) {
   const lineMap = /* @__PURE__ */ new Map();

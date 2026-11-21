@@ -417,8 +417,9 @@ export class AnalysisService {
           rhymeCandidateScan,
         ),
         temperature: serverEnv.llmTemperature,
-        maxTokens: serverEnv.llmMaxTokens,
+        maxTokens: estimateAnalysisMaxTokens(lines.length, serverEnv.llmMaxTokens),
         disableThinking: true,
+        timeoutMs: ANALYSIS_TIMEOUT_MS,
       });
 
       diagnostics.push({
@@ -1508,6 +1509,14 @@ function isMultiSyllableRhymeUnit(unit: RhymeAnalysisUnitDraft): boolean {
   return /[一-鿿]/.test(text)
     ? text.length >= 2
     : text.split(/\s+/).filter(Boolean).length >= 2;
+}
+
+/** 整首歌分析一次要返回韵脚、分组和每行细节，实测约 260 token/行 + 2000 固定开销；默认的 2400 只够 3 行左右。 */
+export const ANALYSIS_TIMEOUT_MS = 120_000;
+export function estimateAnalysisMaxTokens(lineCount: number, configured: number): number {
+  const needed = 2500 + Math.max(1, lineCount) * 300;
+  /* 封顶只限制自动估算；用户显式配置得更大时尊重用户。 */
+  return Math.max(configured, Math.min(16_000, needed));
 }
 
 function createDraftLineMap(lines: LlmLineDraft[] | undefined): Map<number, LlmLineDraft> {

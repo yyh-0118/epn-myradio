@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseLrc, parseLyrics, parseYrc, activeLineIndex, formatTime } from '../src/lib/lyrics';
 import { buildApp } from '../server/app';
+import { ANALYSIS_TIMEOUT_MS, estimateAnalysisMaxTokens } from '../vendor/epn/server/services/AnalysisService';
 import { READING_EMOTION_MAX, READING_NOTE_MAX, ReadingUnavailableError, buildReadingPrompt, normalizeReading, parseReadingLine, streamReading } from '../server/reading';
 import { evidenceToLineIndexes, toBarViews, toInsightViews } from '../server/analysis-view';
 import { REVIEW_DATA_DELIMITER, ReviewUnavailableError, createReviewSplitter, parseJsonObject, runReview, streamReview } from '../server/review';
@@ -515,4 +516,13 @@ test('reading endpoint validates input, caps lyric size, and reports a missing m
     assert.match(response.body, /LLM_NOT_CONFIGURED/);
     assert.ok(!response.body.includes('独特的一句歌词'));
   } finally { await app.close(); }
+});
+
+test('analysis output budget scales with lyric length so long songs are not truncated into the rules fallback', () => {
+  assert.equal(estimateAnalysisMaxTokens(3, 2400), 3400);
+  assert.ok(estimateAnalysisMaxTokens(22, 2400) >= 7700 + 800);
+  assert.equal(estimateAnalysisMaxTokens(500, 2400), 16000);
+  assert.equal(estimateAnalysisMaxTokens(1, 20000), 20000);
+  assert.equal(estimateAnalysisMaxTokens(0, 2400), 2800);
+  assert.ok(ANALYSIS_TIMEOUT_MS > 45_000);
 });

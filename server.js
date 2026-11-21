@@ -4666,7 +4666,7 @@ async function proxyAfterglowApi(req, res, pathname) {
   }
   const routes = {
     '/afterglow-api/health': { method: 'GET', target: '/api/health', timeout: 3000 },
-    '/afterglow-api/analysis/run': { method: 'POST', target: '/api/analysis/run', timeout: 55000 },
+    '/afterglow-api/analysis/run': { method: 'POST', target: '/api/analysis/run', timeout: 125000 },
     '/afterglow-api/taste/run': { method: 'POST', target: '/api/taste/run', timeout: 58000, maxBody: 64 * 1024 },
     '/afterglow-api/ask/run': { method: 'POST', target: '/api/ask/run', timeout: 58000, maxBody: 64 * 1024 },
     '/afterglow-api/review/run': { method: 'POST', target: '/api/review/run', timeout: 58000, maxBody: 256 * 1024 },

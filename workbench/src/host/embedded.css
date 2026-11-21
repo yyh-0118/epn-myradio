@@ -336,3 +336,4 @@ button.review-mood:hover { filter: brightness(1.2); }
 .epn-status.on i { background: #6fcf97; box-shadow: 0 0 0 3px rgba(111,207,151,.15); }
 .reading-card { margin-top: 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: 11px; background: rgba(16,25,27,.7); min-width: 0; }
 .reading-scroll { max-height: min(62vh, 640px); overflow-y: auto; margin: 0 -8px; padding: 0 8px; scrollbar-width: thin; }
+.reading-stop { margin-top: 10px; padding: 5px 14px; font-size: 10px; background: transparent; border: 1px solid var(--line); color: #c9b08c; }

@@ -14,6 +14,8 @@ export interface DeepSeekCompleteJsonInput {
   maxTokens?: number;
   /** 结构化 JSON 任务不需要推理；推理模型会把输出额度耗尽而正文为空。仅对 DeepSeek 官方接口生效。 */
   disableThinking?: boolean;
+  /** 本次请求的总时长上限；默认 45 秒。 */
+  timeoutMs?: number;
 }
 
 export interface DeepSeekStreamTextInput {
@@ -127,6 +129,7 @@ export class DeepSeekClient {
       temperature: input.temperature,
       maxTokens: input.maxTokens,
       disableThinking: input.disableThinking,
+      timeoutMs: input.timeoutMs,
       responseFormat: {
         type: "json_object",
       },
@@ -200,6 +203,7 @@ export class DeepSeekClient {
     maxTokens?: number;
     responseFormat?: { type: "json_object" };
     disableThinking?: boolean;
+    timeoutMs?: number;
   }): Promise<TResponse> {
     const response = await this.postRawCompletion(input);
 
@@ -215,6 +219,7 @@ export class DeepSeekClient {
     responseFormat?: { type: "json_object" };
     noTimeout?: boolean;
     disableThinking?: boolean;
+    timeoutMs?: number;
   }): Promise<Response> {
     this.assertConfigured();
 
@@ -226,11 +231,12 @@ export class DeepSeekClient {
       headers.Authorization = `Bearer ${serverEnv.llmApiKey}`;
     }
 
+    const timeoutMs = input.timeoutMs ?? 45_000;
     const signal = input.noTimeout
       ? input.signal
       : input.signal
-        ? AbortSignal.any([input.signal, AbortSignal.timeout(45_000)])
-        : AbortSignal.timeout(45_000);
+        ? AbortSignal.any([input.signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs);
 
     const response = await fetch(serverEnv.llmApiUrl, {
       method: "POST",

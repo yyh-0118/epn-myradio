@@ -42,7 +42,7 @@ export function AnalysisPanel({ track }: { track?: Track }) {
     const abort = new AbortController(); controller.current = abort;
     setBusy(true); setError('');
     try {
-      const response = await fetch(`${apiPrefix}/analysis/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rawLyrics, track: { title: track?.title, artist: track?.artist } }), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(60_000)]) });
+      const response = await fetch(`${apiPrefix}/analysis/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rawLyrics, track: { title: track?.title, artist: track?.artist } }), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(125_000)]) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message || '分析失败，请稍后重试。');
       if (!Array.isArray(body.lines) || !Array.isArray(body.units)) throw new Error('分析响应格式不正确。');
@@ -54,12 +54,14 @@ export function AnalysisPanel({ track }: { track?: Track }) {
       if (!abort.signal.aborted) setError(reason instanceof Error && reason.name !== 'TimeoutError' && reason.name !== 'SyntaxError' ? reason.message : '分析超时或服务未启动。笔记仍可正常保存，请稍后重试。');
     } finally { if (!abort.signal.aborted) setBusy(false); }
   };
+  const lineCount = rawLyrics ? rawLyrics.split('\n').length : 0;
+  const stop = () => { controller.current?.abort(); setBusy(false); };
   const groups = result ? [...new Set(result.units.map((unit) => unit.group))] : [];
   return <section className="analysis-panel">
     <header><div><Cpu size={17} /><strong>EPN 分析参考</strong></div><span className="engine-badge">ENGINE</span></header>
     <div className="analysis-intro"><h3>多一个理解作品的角度。</h3><p>不替你感动，也不替你下结论。</p></div>
     {!result && !busy && <div className="analysis-empty"><div className="analysis-orbit"><Activity size={25} /></div><p>韵脚结构 · 文本情绪 · 叙事张力</p><span>主动分析时只发送这首歌的歌词与名称，<br />不会发送你的私人笔记或音频。</span></div>}
-    {busy && <div className="analysis-loading" role="status"><LoaderCircle size={28} className="spin" /><strong>正在运行 EPN 分析…</strong><p>你可以继续写，结果不会覆盖笔记。</p></div>}
+    {busy && <div className="analysis-loading" role="status"><LoaderCircle size={28} className="spin" /><strong>正在运行 EPN 分析…</strong><p>{lineCount > 12 ? `这首歌有 ${lineCount} 行，需要半分钟左右。` : '通常十几秒。'}你可以继续写，结果不会覆盖笔记。</p><button className="button reading-stop" onClick={stop}>停止</button></div>}
     {error && <div className="inline-error" role="alert">{error}</div>}
     {result && <div className="analysis-result">
       <div className={`source-badge ${result.source === 'rules' ? 'rules' : ''}`}><ShieldCheck size={13} />{result.source === 'rules' ? '规则分析 · 未使用 LLM' : result.source === 'hybrid' ? 'LLM + 规则融合分析' : 'LLM 辅助 · 韵脚规则回退'}</div>
